@@ -6,28 +6,39 @@ import re
 
 
 #Inputs
-FILE_PATH = r""
+FILE_PATH = r"C:\Users\jgasink\Desktop\ERT Project\Working Copies\Species_ERT_Workbook_7-1-26.xlsx"
 
-START_ROW = 5
+START_ROW = 26
 
-GREEN = "#ffe2efda"
-RED = "#ffffcccc"
+GREEN = "#FFE2EFDA"
+RED = "#FFFFCCCC"
 
-OUTPUT_FILE = "ERT_Translated.xlsx"
+OUTPUT_FILE = r"C:\Users\jgasink\Desktop\ERT Project\Python\ERT_Translated.xlsx"
 
-# Optional allowlist of sheet names to process. Leave empty to process all sheets.
-SHEETS_TO_PROCESS = []
+#Optional allowlist of sheet names to process. Leave empty to process all sheets.
+SHEETS_TO_PROCESS = ["Jolthead Porgy", "Saucereye Porgy", "Sheepshead Porgy"]
 
 
 #Helper functions 
 #Normalizes color to 8 digit ARGB hex code (e.g. #AARRGGBB)
 def normalize_color(rgb):
 
-
     if rgb is None:
         return None
 
-    return rgb[-8:]
+    if isinstance(rgb, str):
+        value = rgb.strip().upper()
+        return value if value.startswith("#") else f"#{value}"
+
+    if hasattr(rgb, "rgb") and rgb.rgb:
+        value = str(rgb.rgb).strip().upper()
+        return value if value.startswith("#") else f"#{value}"
+
+    if hasattr(rgb, "type") and getattr(rgb, "type") == "rgb":
+        value = str(getattr(rgb, "value", "")).strip().upper()
+        return value if value.startswith("#") else f"#{value}"
+
+    return str(rgb).upper()
 
 #Converts an Excel cell into a datetime object
 def parse_date(value):
@@ -42,6 +53,26 @@ def parse_date(value):
         return datetime.strptime(str(value), "%m/%d/%Y")
     except ValueError:
         return None
+
+#Resolves a cell date, including Census year handling for green and red cells.
+def get_cell_date(value, color, start_date=None):
+
+    census_match = re.search(r"census\s*(\d{4})", str(value or ""), flags=re.I)
+
+    if census_match:
+        year = int(census_match.group(1))
+
+        if color == GREEN:
+            return datetime.strptime(f"12/31/{year}", "%m/%d/%Y")
+
+        if color == RED:
+            if start_date is not None and start_date.year == year:
+                year_end = datetime.strptime(f"12/31/{year}", "%m/%d/%Y")
+                return start_date + (year_end - start_date) / 2
+
+            return datetime.strptime(f"12/31/{year}", "%m/%d/%Y")
+
+    return parse_date(value)
 
 #Pulls the first letter of each word in a sheet name and returns it as a string (Collects Species Name)
 def sheet_prefix(sheet_name):
@@ -74,16 +105,19 @@ for ws in wb.worksheets:
 
 
 
-    for person_num, col in enumerate(ws.iter_cols(), start=1):
+    active_person_num = 0
 
-        entity_id = f"{prefix}{person_num}"
+    for col in ws.iter_cols():
 
         state = "idle"
         start_date = None
+        column_record = None
+        had_activity = False
+        entity_id = f"{prefix}{active_person_num + 1}"
 
         #Scans the fill color of each cell in the column starting from START_ROW. If a cell is filled with GREEN, it marks the start date. 
         #If a cell is filled with RED and a start date has been recorded, it marks the stop date and calculates the duration in days and year fraction. 
-        #The results are stored in a list of records.
+        #The results are stored as one record per column/individual.
         for cell in col[START_ROW - 1:]:
 
             fill = cell.fill
@@ -94,23 +128,16 @@ for ws in wb.worksheets:
             if fill.fill_type != "solid":
                 continue
 
-            color = normalize_color(fill.start_color.rgb)
+            color = normalize_color(getattr(fill.fgColor, "rgb", None))
+            if color is None:
+                color = normalize_color(getattr(fill.start_color, "rgb", None))
 
-            date = parse_date(cell.value)
-
-            if color == GREEN:
-                census_match = re.search(r"census\s*(\d{4})", str(cell.value or ""), flags=re.I)
-                if census_match:
-                    year = int(census_match.group(1))
-                    date = datetime.strptime(f"12/31/{year}", "%m/%d/%Y")
-                else:
-                    date = parse_date(cell.value)
-            else:
-                date = parse_date(cell.value)
+            date = get_cell_date(cell.value, color, start_date if state == "started" else None)
 
             if date is None:
                 continue
 
+            had_activity = True
 
             #Green indicates the addition of a fish/individual to the GOT (start_date)
             if color == GREEN:
@@ -127,7 +154,7 @@ for ws in wb.worksheets:
 
                 yearfrac = duration_days / 365.25
 
-                records.append({
+                column_record = {
 
                     "sheet": sheet_name,
 
@@ -143,14 +170,22 @@ for ws in wb.worksheets:
 
                     "status": "completed"
 
-                })
+                }
 
                 # Ready for another interval
 
                 state = "idle"
                 start_date = None
 
-        if state == "started" and start_date is not None:
+        if not had_activity:
+            continue
+
+        active_person_num += 1
+
+        if column_record is not None:
+            column_record["entity_id"] = entity_id
+            records.append(column_record)
+        elif state == "started" and start_date is not None:
             records.append({
 
                 "sheet": sheet_name,
@@ -170,13 +205,16 @@ for ws in wb.worksheets:
             })
 
 
-df = pd.DataFrame(records)
- 
+expected_columns = ["sheet", "entity_id", "start_date", "stop_date", "duration_days", "yearfrac", "status"]
 
+df = pd.DataFrame(records, columns=expected_columns)
 
-df = df.sort_values(
-    by=["sheet", "entity_id", "start_date"]
-).reset_index(drop=True)
+if not df.empty:
+    df = df.sort_values(
+        by=["sheet", "entity_id", "start_date"]
+    ).reset_index(drop=True)
+else:
+    df = df.reset_index(drop=True)
 
 print(df)
 
