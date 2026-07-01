@@ -1,0 +1,25 @@
+{
+  // --- Core inline suggestion control ---
+  "editor.inlineSuggest.enabled": true,
+
+  // --- BIGGEST anti-spam control: delay suggestions ---
+  "editor.inlineSuggest.minShowDelay": 800,
+
+  // --- Reduce aggressive AI refactor suggestions ---
+  "github.copilot.nextEditSuggestions.enabled": false,
+
+  // --- Optional: prevent Copilot in noisy file types ---
+  "github.copilot.enable": {
+    "*": true,
+    "plaintext": false,
+    "markdown": false,
+    "scminput": false
+  },
+
+  // --- Reduce IntelliSense + Copilot collision spam ---
+  "editor.quickSuggestions": {
+    "other": true,
+    "comments": false,
+    "strings": false
+  }
+}
