@@ -1,128 +1,36 @@
-from openpyxl import load_workbook
-import pandas as pd
-from datetime import datetime
-
-file_path = "your_file.xlsx"
-wb = load_workbook(file_path)
-
-START_ROW = 5
-
-BLUE = "FF0000FF"
-GREEN = "FF00FF00"
-
-
-def normalize_color(rgb):
-    if rgb is None:
-        return None
-    return rgb[-8:]
-
-
-def parse_date(value):
-    if value is None:
-        return None
-
-    if isinstance(value, datetime):
-        return value
-
-    try:
-        return datetime.strptime(str(value), "%m/%d/%Y")
-    except ValueError:
-        return None
-
-
-records = []
-
-# ---- LOOP THROUGH ALL SHEETS ----
-for ws in wb.worksheets:
-
-    sheet_name = ws.title
-
-    # ---- LOOP THROUGH COLUMNS ----
-    for col in ws.iter_cols():
-
-        col_id = col[0].column_letter
-
-        state = "idle"
-        start_date = None
-
-        # ---- SCAN ROWS ----
-        for cell in col[START_ROW - 1:]:
-
-            fill = cell.fill
-            if not fill or fill.fill_type != "solid":
-                continue
-
-            color = normalize_color(fill.start_color.rgb)
-            date = parse_date(cell.value)
-
-            if not date:
-                continue
-
-            # ---- START EVENT ----
-            if color == BLUE:
-                start_date = date
-                state = "started"
-
-            # ---- STOP EVENT ----
-            elif color == GREEN and state == "started":
-                stop_date = date
-
-                records.append({
-                    "sheet": sheet_name,
-                    "entity": col_id,
-                    "start_date": start_date,
-                    "stop_date": stop_date,
-                    "duration_days": (stop_date - start_date).days
-                })
-
-                state = "idle"
-                start_date = None
-
-
-# ---- BUILD DATAFRAME ----
-df = pd.DataFrame(records)
-
-print(df)
-
+#Loads modules
 from openpyxl import load_workbook
 from datetime import datetime
 import pandas as pd
 import re
 
-# =====================================================
-# USER SETTINGS
-# =====================================================
 
-FILE_PATH = r"C:\YourFolder\your_workbook.xlsx"
+#Inputs
+FILE_PATH = r""
 
 START_ROW = 5
 
-# Update these to match your workbook colors.
-# Print cell.fill.start_color.rgb once if you're unsure.
-BLUE = "FF0000FF"
-GREEN = "FF00FF00"
+GREEN = "#ffe2efda"
+RED = "#ffffcccc"
 
-OUTPUT_FILE = "Event_Durations.xlsx"
+OUTPUT_FILE = "ERT_Translated.xlsx"
 
-# =====================================================
-# HELPER FUNCTIONS
-# =====================================================
+# Optional allowlist of sheet names to process. Leave empty to process all sheets.
+SHEETS_TO_PROCESS = []
 
+
+#Helper functions 
+#Normalizes color to 8 digit ARGB hex code (e.g. #AARRGGBB)
 def normalize_color(rgb):
-    """
-    Converts Excel ARGB colors into a consistent format.
-    """
+
 
     if rgb is None:
         return None
 
     return rgb[-8:]
 
-
+#Converts an Excel cell into a datetime object
 def parse_date(value):
-    """
-    Converts an Excel cell into a datetime object.
-    """
 
     if value is None:
         return None
@@ -135,44 +43,36 @@ def parse_date(value):
     except ValueError:
         return None
 
-
+#Pulls the first letter of each word in a sheet name and returns it as a string (Collects Species Name)
 def sheet_prefix(sheet_name):
-    """
-    Examples
 
-    Site A          -> SA
-    North Pond      -> NP
-    Upper River     -> UR
-    Study Site 2    -> SS2
-    """
 
     words = re.findall(r"[A-Za-z0-9]+", sheet_name)
 
     return "".join(word[0].upper() for word in words)
 
 
-# =====================================================
-# LOAD WORKBOOK
-# =====================================================
-
 wb = load_workbook(FILE_PATH)
 
 records = []
 
-# =====================================================
-# PROCESS EVERY WORKSHEET
-# =====================================================
+#Loads the workbook and iterates through each worksheet, processing each column to extract start and stop dates based on cell fill colors. 
+#It collects the data into a list of records, which is then converted into a DataFrame and saved to an Excel file.
+allowed_sheets = {name.strip().casefold() for name in SHEETS_TO_PROCESS if name and name.strip()}
 
 for ws in wb.worksheets:
 
     sheet_name = ws.title
+
+    if allowed_sheets and sheet_name.strip().casefold() not in allowed_sheets:
+        print(f"Skipping {sheet_name}")
+        continue
+
     prefix = sheet_prefix(sheet_name)
 
     print(f"Processing {sheet_name}")
 
-    # --------------------------------------------
-    # Each column is one individual
-    # --------------------------------------------
+
 
     for person_num, col in enumerate(ws.iter_cols(), start=1):
 
@@ -181,10 +81,9 @@ for ws in wb.worksheets:
         state = "idle"
         start_date = None
 
-        # ----------------------------------------
-        # Scan downward beginning at START_ROW
-        # ----------------------------------------
-
+        #Scans the fill color of each cell in the column starting from START_ROW. If a cell is filled with GREEN, it marks the start date. 
+        #If a cell is filled with RED and a start date has been recorded, it marks the stop date and calculates the duration in days and year fraction. 
+        #The results are stored in a list of records.
         for cell in col[START_ROW - 1:]:
 
             fill = cell.fill
@@ -199,23 +98,28 @@ for ws in wb.worksheets:
 
             date = parse_date(cell.value)
 
+            if color == GREEN:
+                census_match = re.search(r"census\s*(\d{4})", str(cell.value or ""), flags=re.I)
+                if census_match:
+                    year = int(census_match.group(1))
+                    date = datetime.strptime(f"12/31/{year}", "%m/%d/%Y")
+                else:
+                    date = parse_date(cell.value)
+            else:
+                date = parse_date(cell.value)
+
             if date is None:
                 continue
 
-            # ------------------------------------
-            # BLUE = START EVENT
-            # ------------------------------------
 
-            if color == BLUE:
+            #Green indicates the addition of a fish/individual to the GOT (start_date)
+            if color == GREEN:
 
                 start_date = date
                 state = "started"
 
-            # ------------------------------------
-            # GREEN = STOP EVENT
-            # ------------------------------------
-
-            elif color == GREEN and state == "started":
+            #If green was found ("started") and red is found, it indicated the death/disappearance/removal of that individual from the GOT
+            elif color == RED and state == "started":
 
                 stop_date = date
 
@@ -235,7 +139,9 @@ for ws in wb.worksheets:
 
                     "duration_days": duration_days,
 
-                    "yearfrac": yearfrac
+                    "yearfrac": yearfrac,
+
+                    "status": "completed"
 
                 })
 
@@ -244,14 +150,29 @@ for ws in wb.worksheets:
                 state = "idle"
                 start_date = None
 
+        if state == "started" and start_date is not None:
+            records.append({
 
-# =====================================================
-# CREATE DATAFRAME
-# =====================================================
+                "sheet": sheet_name,
+
+                "entity_id": entity_id,
+
+                "start_date": start_date,
+
+                "stop_date": None,
+
+                "duration_days": None,
+
+                "yearfrac": None,
+
+                "status": "still alive"
+
+            })
+
 
 df = pd.DataFrame(records)
+ 
 
-# Optional: sort output
 
 df = df.sort_values(
     by=["sheet", "entity_id", "start_date"]
@@ -259,9 +180,6 @@ df = df.sort_values(
 
 print(df)
 
-# =====================================================
-# SAVE OUTPUT
-# =====================================================
 
 df.to_excel(OUTPUT_FILE, index=False)
 
