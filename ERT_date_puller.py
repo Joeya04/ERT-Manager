@@ -7,8 +7,8 @@ import math
 
 
 #Inputs
-FILE_PATH = r"C:\Users\jgasink\Desktop\ERT Project\Working Copies\Species_ERT_Workbook_7-1-26.xlsx"
-
+#FILE_PATH = r"C:\Users\jgasink\Desktop\ERT Project\Working Copies\Species_ERT_Workbook_7-1-26.xlsx"
+FILE_PATH = r"C:\Users\jgasink\Desktop\ERT Project\Python\Demo_data.xlsx"
 
 START_ROW = 26
 
@@ -92,7 +92,7 @@ def get_cell_date(value, color, start_date=None, is_intro=False):
 
     return None
 
-
+#Function that calculates the intro and exit date of an animal into the GOT and gives the yearfrac (Length of time in tank)
 def calculate_yearfrac(start_date, stop_date):
 
     if start_date is None or stop_date is None:
@@ -104,6 +104,7 @@ def calculate_yearfrac(start_date, stop_date):
     days = (stop_date - start_date).days
     return days / 365.25
 
+#Only runs specified sheets
 def should_process_sheet(sheet_name):
 
     if not SHEETS_TO_PROCESS:
@@ -139,11 +140,10 @@ for ws in wb.worksheets:
 
     print(f"Processing {sheet_name}")
 
+    sheet_person_num = 0
 
+    for col in ws.iter_cols():
 
-    for col_idx, col in enumerate(ws.iter_cols(), start=1):
-
-        entity_id = 0
         intro_date = None
         stop_date = None
         pending_records = []
@@ -176,7 +176,6 @@ for ws in wb.worksheets:
                 continue
 
             if intro_date is None:
-                entity_count = entity_id + 1
                 intro_date = date
                 continue
 
@@ -184,30 +183,22 @@ for ws in wb.worksheets:
                 stop_date = date
                 break
 
-        if intro_date is not None:
-            if stop_date is None:
-                records.append({
-                    "sheet": sheet_name,
-                    "entity_id": entity_id,
-                    "start_date": intro_date,
-                    "stop_date": None,
-                    "duration_days": None,
-                    "yearfrac": None,
-                    "status": "still alive"
-                })
-            else:
-                duration_days = (stop_date - intro_date).days
-                yearfrac = calculate_yearfrac(intro_date, stop_date)
+        if intro_date is not None and stop_date is not None:
+            sheet_person_num += 1
+            entity_id = f"{prefix}{sheet_person_num}"
 
-                records.append({
-                    "sheet": sheet_name,
-                    "entity_id": entity_id,
-                    "start_date": intro_date,
-                    "stop_date": stop_date,
-                    "duration_days": duration_days,
-                    "yearfrac": yearfrac,
-                    "status": "completed"
-                })
+            duration_days = (stop_date - intro_date).days
+            yearfrac = calculate_yearfrac(intro_date, stop_date)
+
+            records.append({
+                "sheet": sheet_name,
+                "entity_id": entity_id,
+                "start_date": intro_date,
+                "stop_date": stop_date,
+                "duration_days": duration_days,
+                "yearfrac": yearfrac,
+                "status": "completed"
+            })
 
 
 expected_columns = ["sheet", "entity_id", "start_date", "stop_date", "duration_days", "yearfrac", "status"]
