@@ -13,9 +13,9 @@ FILE_PATH = r"C:\Users\jgasink\Desktop\ERT Project\Python\Demo_data.xlsx"
 START_ROW = 26
 
 
-
-GREEN = "#FFE2EFDA"
-RED = "#FFFFCCCC"
+GREEN = "#FFE2EFDA" #Entry to the GOT or TRAY
+RED = "#FFFFCCCC" #Departure from the GOT (disappearance, death, transfer)
+BLUE = "#ff4d93d9" #Still Alive as of 12/31/24
 
 OUTPUT_FILE = r"C:\Users\jgasink\Desktop\ERT Project\Python\ERT_Translated_Porgy.xlsx"
 
@@ -146,10 +146,11 @@ for ws in wb.worksheets:
 
         intro_date = None
         stop_date = None
+        stop_status = None
         pending_records = []
 
         #Scan each column row by row and treat the first meaningful date/census as the introduction,
-        #then use the first later red/census entry as the exit.
+        #then use the first later red/blue/census entry as the exit.
         for cell in col[START_ROW - 1:]:
 
             cell_value = cell.value
@@ -166,7 +167,8 @@ for ws in wb.worksheets:
 
             is_red = color == RED
             is_green = color == GREEN
-            is_event = is_green or is_red or isinstance(cell_value, (datetime, str))
+            is_blue = color == BLUE
+            is_event = is_green or is_red or is_blue or isinstance(cell_value, (datetime, str))
 
             if not is_event:
                 continue
@@ -179,8 +181,9 @@ for ws in wb.worksheets:
                 intro_date = date
                 continue
 
-            if is_red and stop_date is None:
+            if (is_red or is_blue) and stop_date is None:
                 stop_date = date
+                stop_status = "completed" if is_red else "still_alive"
                 break
 
         if intro_date is not None and stop_date is not None:
@@ -197,7 +200,7 @@ for ws in wb.worksheets:
                 "stop_date": stop_date,
                 "duration_days": duration_days,
                 "yearfrac": yearfrac,
-                "status": "completed"
+                "status": stop_status
             })
 
 
