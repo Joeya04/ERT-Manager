@@ -148,6 +148,8 @@ for ws in wb.worksheets:
         stop_date = None
         stop_status = None
         pending_records = []
+        had_red_census = False
+        had_green_census = False
 
         #Scan each column row by row and treat the first meaningful date/census as the introduction,
         #then use the first later red/blue/census entry as the exit.
@@ -172,6 +174,12 @@ for ws in wb.worksheets:
 
             if not is_event:
                 continue
+
+            is_census = bool(re.search(r"(\d{4})\s*census|census\s*(\d{4})", str(cell_value or ""), flags=re.I))
+            if is_census and is_red:
+                had_red_census = True
+            elif is_census and is_green:
+                had_green_census = True
 
             date = get_cell_date(cell_value, color, intro_date, is_intro=intro_date is None)
             if date is None:
@@ -200,11 +208,13 @@ for ws in wb.worksheets:
                 "stop_date": stop_date,
                 "duration_days": duration_days,
                 "yearfrac": yearfrac,
-                "status": stop_status
+                "status": stop_status,
+                "red_census": "Yes" if had_red_census else "No",
+                "green_census": "Yes" if had_green_census else "No"
             })
 
 
-expected_columns = ["sheet", "entity_id", "start_date", "stop_date", "duration_days", "yearfrac", "status"]
+expected_columns = ["sheet", "entity_id", "start_date", "stop_date", "duration_days", "yearfrac", "status", "red_census", "green_census"]
 
 df = pd.DataFrame(records, columns=expected_columns)
 
