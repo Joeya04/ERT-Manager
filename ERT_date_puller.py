@@ -176,7 +176,6 @@ for ws in wb.worksheets:
 
             is_event = has_fill_color or isinstance(cell_value, (datetime, str)) or (isinstance(cell_value, str) and bool(str(cell_value).strip()))
 
-
             if not is_event:
                 continue
 
@@ -186,6 +185,11 @@ for ws in wb.worksheets:
             elif is_census and is_green:
                 had_green_census = True
 
+            if is_blue is True:
+                stop_date = datetime(1800, 1, 1)
+                print("encountered blue in " + sheet_name + " at row " + str(cell.row) + " in column " + str(cell.column) + ". Setting stop_date to 1/1/1800.")
+                stop_status = "still_alive"
+
             date = get_cell_date(cell_value, color, intro_date, is_intro=intro_date is None)
             if date is None:
                 continue
@@ -194,14 +198,10 @@ for ws in wb.worksheets:
                 intro_date = date
                 continue
 
-            if is_blue is not None:
-                stop_status = "still_alive"
-                stop_date = "1/1/1800"
-                continue
+            if (is_red or is_blue) and stop_date is None:
 
-            if is_red and stop_date is None:
                 stop_date = date
-                stop_status = "completed"
+                stop_status = "completed" if is_red else "still_alive"
                 break
 
         if intro_date is not None and stop_date is not None:
