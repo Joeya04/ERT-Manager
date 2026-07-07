@@ -13,12 +13,11 @@ FILE_PATH = r"C:\Users\jgasink\Desktop\ERT Project\Python\Demo_data.xlsx"
 START_ROW = 26
 
 
-GREEN = "#E2EFDA" #Entry to the GOT or TRAY
-RED = "#FFCCCC" #Departure from the GOT (disappearance, death, transfer)
-BLUE = "#4D93D9" #Still Alive as of 12/31/24
+GREEN = "#FFE2EFDA" #Entry to the GOT or TRAY
+RED = "#FFFFCCCC" #Departure from the GOT (disappearance, death, transfer)
+BLUE = "#ff4d93d9" #Still Alive as of 12/31/24
 
 OUTPUT_FILE = r"C:\Users\jgasink\Desktop\ERT Project\Python\ERT_Translated_Porgy.xlsx"
-
 
 #Optional allowlist of sheet names to process. Leave empty to process all sheets.
 SHEETS_TO_PROCESS = ["Jolthead Porgy", "Saucereye Porgy", "sheepshead porgy"]
@@ -33,25 +32,21 @@ def normalize_color(color):
 
     if isinstance(color, str):
         value = color.strip().upper()
-    elif hasattr(color, "rgb") and color.rgb:
+        return value if value.startswith("#") else f"#{value}"
+
+    if hasattr(color, "rgb") and color.rgb:
         value = str(color.rgb).strip().upper()
-    elif hasattr(color, "value") and color.value:
+        return value if value.startswith("#") else f"#{value}"
+
+    if hasattr(color, "value") and color.value:
         value = str(color.value).strip().upper()
-    elif hasattr(color, "type") and getattr(color, "type") == "rgb":
+        return value if value.startswith("#") else f"#{value}"
+
+    if hasattr(color, "type") and getattr(color, "type") == "rgb":
         value = str(getattr(color, "value", "")).strip().upper()
-    else:
-        value = str(color).upper()
+        return value if value.startswith("#") else f"#{value}"
 
-    value = value.strip().replace(" ", "")
-    if value.startswith("#"):
-        value = value[1:]
-
-    if len(value) == 8:
-        value = value[-6:]
-    elif len(value) != 6:
-        return None
-
-    return f"#{value}"
+    return str(color).upper()
 
 #Converts an Excel cell into a datetime object
 def parse_date(value):
@@ -62,27 +57,10 @@ def parse_date(value):
     if isinstance(value, datetime):
         return value
 
-    text = str(value).strip()
-    if not text:
+    try:
+        return datetime.strptime(str(value), "%m/%d/%Y")
+    except ValueError:
         return None
-
-    for fmt in ("%m/%d/%Y", "%m/%d/%y", "%Y-%m-%d", "%Y/%m/%d", "%m-%d-%Y", "%m-%d-%y"):
-        try:
-            return datetime.strptime(text, fmt)
-        except ValueError:
-            continue
-
-    date_match = re.search(r"(\d{1,2})/(\d{1,2})/(\d{2,4})", text)
-    if date_match:
-        month, day, year = map(int, date_match.groups())
-        if year < 100:
-            year += 2000 if year < 50 else 1900
-        try:
-            return datetime(year, month, day)
-        except ValueError:
-            return None
-
-    return None
 
 #Resolves a cell date, including Census year handling for green and red cells.
 def get_cell_date(value, color, start_date=None, is_intro=False):
@@ -172,7 +150,6 @@ for ws in wb.worksheets:
         pending_records = []
         had_red_census = False
         had_green_census = False
-        saw_green = False
 
         #Scan each column row by row and treat the first meaningful date/census as the introduction,
         #then use the first later red/blue/census entry as the exit.
@@ -193,53 +170,29 @@ for ws in wb.worksheets:
             is_red = color == RED
             is_green = color == GREEN
             is_blue = color == BLUE
-
-            if isinstance(cell_value, str):
-                text_value = str(cell_value).strip()
-            else:
-                text_value = ""
-
-            has_date_or_census = parse_date(cell_value) is not None or bool(re.search(r"(\d{4})\s*census|census\s*(\d{4})", text_value, flags=re.I))
-            if is_blue:
-                if has_date_or_census:
-                    is_event = True
-                else:
-                    continue
-            else:
-                is_event = is_green or is_red or isinstance(cell_value, (datetime, str))
+            is_event = is_green or is_red or is_blue or isinstance(cell_value, (datetime, str))
 
             if not is_event:
                 continue
 
-            is_census = bool(re.search(r"(\d{4})\s*census|census\s*(\d{4})", text_value, flags=re.I))
+            is_census = bool(re.search(r"(\d{4})\s*census|census\s*(\d{4})", str(cell_value or ""), flags=re.I))
             if is_census and is_red:
                 had_red_census = True
             elif is_census and is_green:
                 had_green_census = True
 
-            if is_green:
-                saw_green = True
-                date = get_cell_date(cell_value, color, intro_date, is_intro=True)
-                if date is not None and intro_date is None:
-                    intro_date = date
+            date = get_cell_date(cell_value, color, intro_date, is_intro=intro_date is None)
+            if date is None:
                 continue
 
             if intro_date is None:
+                intro_date = date
                 continue
 
-            if is_red and stop_date is None:
-                date = get_cell_date(cell_value, color, intro_date, is_intro=False)
-                if date is not None:
-                    stop_date = date
-                    stop_status = "completed"
-                    break
-
-            if is_blue and stop_date is None:
-                date = get_cell_date(cell_value, color, intro_date, is_intro=False)
-                if date is not None:
-                    stop_date = date
-                    stop_status = "still_alive"
-                    break
+            if (is_red or is_blue) and stop_date is None:
+                stop_date = date
+                stop_status = "completed" if is_red else "still_alive"
+                break
 
         if intro_date is not None and stop_date is not None:
             sheet_person_num += 1
