@@ -7,11 +7,12 @@ import math
 
 
 #Inputs
-#FILE_PATH = r"C:\Users\jgasink\Desktop\ERT Project\Working Copies\Species_ERT_Workbook_7-1-26.xlsx"
-FILE_PATH = r"C:\Users\jgasink\Desktop\ERT Project\Python\Demo_data.xlsx"
+FILE_PATH = r"C:\Users\jgasink\Desktop\ERT Project\Working Copies\Species_ERT_Workbook_7-1-26.xlsx"
+#FILE_PATH = r"C:\Users\jgasink\Desktop\ERT Project\Python\Demo_data.xlsx"
+
+SHEET_INDEX = r"C:\Users\jgasink\Desktop\ERT Project\RAW Data\GOT_ERT_Index.xlsx"
 
 START_ROW = 26
-
 
 GREEN = "#FFE2EFDA" #Entry to the GOT or TRAY
 RED = "#FFFFCCCC" #Departure from the GOT (disappearance, death, transfer)
@@ -122,7 +123,20 @@ def sheet_prefix(sheet_name):
     return "".join(word[0].upper() for word in words)
 
 
+config_df = pd.read_excel(SHEET_INDEX)
+
+names_index = dict(zip(
+    config_df["Species"],
+    config_df["Start Row"]
+))
+
+
 wb = load_workbook(FILE_PATH)
+for ws in wb.worksheets:  
+    storage = ws.title
+    print(storage)
+
+
 
 records = []
 
@@ -150,6 +164,7 @@ for ws in wb.worksheets:
         pending_records = []
         had_red_census = False
         had_green_census = False
+        
 
         #Scan each column row by row and treat the first meaningful date/census as the introduction,
         #then use the first later red/blue/census entry as the exit.
@@ -182,7 +197,7 @@ for ws in wb.worksheets:
             is_census = bool(re.search(r"(\d{4})\s*census|census\s*(\d{4})", str(cell_value or ""), flags=re.I))
             if is_census and is_red:
                 had_red_census = True
-            elif is_census and is_green:
+            if is_census and is_green:
                 had_green_census = True
 
             if is_blue is True:
@@ -201,7 +216,7 @@ for ws in wb.worksheets:
             if (is_red or is_blue) and stop_date is None:
 
                 stop_date = date
-                stop_status = "completed" if is_red else "still_alive"
+                stop_status = "still alive" if is_blue else "completed"
                 break
 
         if intro_date is not None and stop_date is not None:
@@ -212,10 +227,10 @@ for ws in wb.worksheets:
             yearfrac = calculate_yearfrac(intro_date, stop_date)
 
             records.append({
-                "sheet": sheet_name,
-                "entity_id": entity_id,
-                "start_date": intro_date,
-                "stop_date": stop_date,
+                "Species": sheet_name,
+                "Individual": entity_id,
+                "Intro_date": intro_date,
+                "Exit_date": stop_date,
                 "duration_days": duration_days,
                 "yearfrac": yearfrac,
                 "status": stop_status,
