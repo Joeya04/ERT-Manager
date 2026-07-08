@@ -5,20 +5,26 @@ import pandas as pd
 import re
 import math
 
-
+###########################################################################################
 #Inputs
-FILE_PATH = r"C:\Users\jgasink\Desktop\ERT Project\Working Copies\Species_ERT_Workbook_7-1-26.xlsx"
-#FILE_PATH = r"C:\Users\jgasink\Desktop\ERT Project\Python\Demo_data.xlsx"
+#Import file path for the master workbook
+#FILE_PATH = r"C:\Users\jgasink\Desktop\ERT Project\Working Copies\Species_ERT_Workbook_7-1-26.xlsx"
+FILE_PATH = r"C:\Users\jgasink\Desktop\ERT Project\Python\Demo_data.xlsx"
 
+###########################################################################################
+#Sheet index of the names and the start row for each species (only if relevant)
 SHEET_INDEX = r"C:\Users\jgasink\Desktop\ERT Project\RAW Data\GOT_ERT_Index.xlsx"
 
-START_ROW = 26
-
+###########################################################################################
+#Input Colors for the different cell types. These are used to determine the status of each individual in the ERT data.
 GREEN = "#FFE2EFDA" #Entry to the GOT or TRAY
 RED = "#FFFFCCCC" #Departure from the GOT (disappearance, death, transfer)
 BLUE = "#FF4D93D9" #Still Alive as of 12/31/24
 
-OUTPUT_FILE = r"C:\Users\jgasink\Desktop\ERT Project\Python\ERT_Translated_Porgy.xlsx"
+###########################################################################################
+#Output Save Location
+OUTPUT_FILE = r"C:\Users\jgasink\Desktop\ERT Project\Python\ERT_Translated_Demo_index.xlsx"
+
 
 #Optional allowlist of sheet names to process. Leave empty to process all sheets.
 SHEETS_TO_PROCESS = ["Jolthead Porgy", "Saucereye Porgy", "sheepshead porgy"]
@@ -124,7 +130,6 @@ def sheet_prefix(sheet_name):
 
 
 config_df = pd.read_excel(SHEET_INDEX)
-
 names_index = dict(zip(
     config_df["Species"],
     config_df["Start Row"]
@@ -146,13 +151,16 @@ for ws in wb.worksheets:
 
     sheet_name = ws.title
 
-    if not should_process_sheet(sheet_name):
+    if sheet_name not in names_index: 
         print(f"Skipping {sheet_name}")
         continue
 
     prefix = sheet_prefix(sheet_name)
 
+    START_ROW = names_index[sheet_name]
+
     print(f"Processing {sheet_name}")
+    print(f"Starting at row {START_ROW} for {sheet_name}")
 
     sheet_person_num = 0
 
