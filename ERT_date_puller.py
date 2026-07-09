@@ -9,11 +9,13 @@ import math
 #Inputs
 #Import file path for the master workbook
 #FILE_PATH = r"C:\Users\jgasink\Desktop\ERT Project\Working Copies\Species_ERT_Workbook_7-1-26.xlsx"
-FILE_PATH = r"C:\Users\jgasink\Desktop\ERT Project\Python\Demo_data.xlsx"
+#FILE_PATH = r"C:\Users\jgasink\Desktop\ERT Project\Python\Demo_data.xlsx"
+FILE_PATH = r"C:\Users\jgasink\Desktop\ERT Project\Working Copies\Species_ERT_Workbook_7-8-26_BlueAnnotated.xlsx"
 
 ###########################################################################################
 #Sheet index of the names and the start row for each species (only if relevant)
 SHEET_INDEX = r"C:\Users\jgasink\Desktop\ERT Project\RAW Data\GOT_ERT_Index.xlsx"
+
 
 ###########################################################################################
 #Input Colors for the different cell types. These are used to determine the status of each individual in the ERT data.
@@ -23,11 +25,8 @@ BLUE = "#FF4D93D9" #Still Alive as of 12/31/24
 
 ###########################################################################################
 #Output Save Location
-OUTPUT_FILE = r"C:\Users\jgasink\Desktop\ERT Project\Python\ERT_Translated_Demo_index.xlsx"
+OUTPUT_FILE = r"C:\Users\jgasink\Desktop\ERT Project\ERT_Translated.xlsx"
 
-
-#Optional allowlist of sheet names to process. Leave empty to process all sheets.
-SHEETS_TO_PROCESS = ["Jolthead Porgy", "Saucereye Porgy", "sheepshead porgy"]
 
 
 #Helper function
@@ -111,15 +110,6 @@ def calculate_yearfrac(start_date, stop_date):
     days = (stop_date - start_date).days
     return days / 365.25
 
-#Only runs specified sheets
-def should_process_sheet(sheet_name):
-
-    if not SHEETS_TO_PROCESS:
-        return True
-
-    allowed_sheets = {name.strip().casefold() for name in SHEETS_TO_PROCESS if name and name.strip()}
-    return sheet_name.strip().casefold() in allowed_sheets
-
 #Pulls the first letter of each word in a sheet name and returns it as a string (Collects Species Name)
 def sheet_prefix(sheet_name):
 
@@ -134,7 +124,6 @@ names_index = dict(zip(
     config_df["Species"],
     config_df["Start Row"]
 ))
-
 
 wb = load_workbook(FILE_PATH)
 for ws in wb.worksheets:  
@@ -247,13 +236,13 @@ for ws in wb.worksheets:
             })
 
 
-expected_columns = ["sheet", "entity_id", "start_date", "stop_date", "duration_days", "yearfrac", "status", "red_census", "green_census"]
+expected_columns = ["Species", "Individual", "Intro_date", "Exit_date", "duration_days", "yearfrac", "status", "red_census", "green_census"]
 
 df = pd.DataFrame(records, columns=expected_columns)
 
 if not df.empty:
     df = df.sort_values(
-        by=["sheet", "entity_id", "start_date"]
+        by=["Species", "Intro_date"]
     ).reset_index(drop=True)
 else:
     df = df.reset_index(drop=True)
