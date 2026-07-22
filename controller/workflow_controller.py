@@ -5,22 +5,30 @@ from rfishbase.fishbase_lookup import run_fishbase
 
 from plotting.plots import create_plot_set
 
-from shiny import App, ui, reactive, render, req
-
-ert_input = input.sheet_index()[0].datapath
-index_input = input.sheet_index()[0].datapath
 
 df = parse_ert_workbook(ert_input, index_input)
 
+from processing.formatter import parse_ert_workbook
+from processing.fishbase import run_fishbase
+from processing.statistics import run_statistics
 
 
-ui.page_fluid(
-    ui.h2("ERT Workflow App"),
-    ui.input_file("ert_workbook", "Upload ERT workbook", accept=[".xlsx"]),
-    ui.input_file("sheet_index", "Upload sheet index", accept=[".xlsx"]),
-    ui.input_select("species_filter", "Species", choices=["All", "SpeciesA", "SpeciesB"]),
-    ui.input_action_button("run_parser", "Run parser"),
-    ui.output_table("parsed_results"),
-    ui.output_text("workflow_status"),
-    ui.download_button("download_excel", "Download parsed data"),
-)
+def run_analysis(filepath):
+
+    # Step 1
+    df = parse_ert_workbook(filepath)
+
+
+    # Step 2
+    df = run_fishbase(df)
+
+
+    # Step 3
+    stats = run_statistics(df)
+
+
+    return {
+        "data": df,
+        "statistics": stats
+    }
+
