@@ -1,4 +1,4 @@
-#App interface for the shiiny app (in python)
+#App interface for the shiiny app (in Python)
 
 from shiny import App, ui, reactive, render, req
 
