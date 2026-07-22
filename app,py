@@ -1,1 +1,17 @@
 #App interface for the shiiny app (in python)
+
+from shiny import App, ui, reactive, render, req
+
+ert_input = input.sheet_index()[0].datapath
+index_input = input.sheet_index()[0].datapath
+
+ui.page_fluid(
+    ui.h2("ERT Workflow App"),
+    ui.input_file("ert_workbook", "Upload ERT workbook", accept=[".xlsx"]),
+    ui.input_file("sheet_index", "Upload sheet index", accept=[".xlsx"]),
+    ui.input_select("species_filter", "Species", choices=["All", "SpeciesA", "SpeciesB"]),
+    ui.input_action_button("run_parser", "Run parser"),
+    ui.output_table("parsed_results"),
+    ui.output_text("workflow_status"),
+    ui.download_button("download_excel", "Download parsed data"),
+)
