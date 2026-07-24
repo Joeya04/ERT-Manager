@@ -1,10 +1,18 @@
 #Plotter for kaplan meier plots
+from rfishbase.kmplots import build_plot
 
 def create_plot(df, x, y):
 
-    # create one figure
+    # Create the Kaplan-Meier plot using the build_plot function
+    km_plot = build_plot(
+        fit=df,
+        title=f"Kaplan-Meier Plot: {y} vs {x}",
+        show_median=True,
+        include_risktable=True
+    )
 
-    return figure
+    return km_plot
+
 
 
 
@@ -26,3 +34,4 @@ def create_plot_set(df, group_by, x, y):
         )
 
     return plots
+

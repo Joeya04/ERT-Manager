@@ -1,14 +1,10 @@
 #Controls workflow of all modules needed for the app
 from formatter.ERT_date_puller_shiny import parse_ert_workbook #MODULES FROM DATE PULLER
 
-from formatter.statistics import run_statistics
 
 from rfishbase.fishbase_lookup import run_fishbase
 
 from plotting.plots import create_plot_set
-
-
-df = parse_ert_workbook(ert_input, index_input)
 
 
 
