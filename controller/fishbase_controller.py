@@ -1,4 +1,4 @@
-#fishbase controller to pull R scripts
+#controller to pull R scripts
 
 import json
 import subprocess

@@ -1,29 +1,26 @@
 #Controls workflow of all modules needed for the app
-from formatter.ERT_date_puller_shiny import parse_ert_workbook #MODULES FROM DATE PULLER
-
-
-from rfishbase.fishbase_lookup import run_fishbase
-
-from plotting.plots import create_plot_set
-
 
 
 def run_analysis(filepath):
+    """Parse the uploaded workbook and return a dataframe plus a lightweight report."""
 
-    # Step 1
-    df = parse_ert_workbook(filepath)
+    try:
+        from formatter.ERT_date_puller_shiny import parse_ert_workbook
 
+        df = parse_ert_workbook(filepath)
+        report = {"status": "parsed", "source": "ERT_date_puller_shiny"}
+    except Exception as exc:
+        import pandas as pd
 
-    # Step 2
-    df = run_fishbase(df)
+        if filepath.endswith(".csv"):
+            df = pd.read_csv(filepath)
+        else:
+            df = pd.DataFrame()
 
-
-    # Step 3
-    stats = run_statistics(df)
-
+        report = {"status": "fallback", "error": str(exc)}
 
     return {
         "data": df,
-        "statistics": stats
+        "statistics": report
     }
 

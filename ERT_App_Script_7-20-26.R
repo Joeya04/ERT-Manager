@@ -16,7 +16,7 @@ library(dplyr)
 library(ggalt)
 library(DT)
 
-ui <- fluidPage(
+ui <- fluidPage( 
   titlePanel("Enclosure Residence Time Calculator"),
   
   sidebarLayout(
@@ -505,7 +505,7 @@ server <- function(input, output, session) {
     fit <- survfit(as.formula(paste("SurvObj ~", group_var)), data = df)
     medians <- summary(fit)$table
     median_df <- data.frame(
-      group = rownames(medians),
+      group = rownames(medians),dumbel
       median_time = medians[, "median"]
     )
     
