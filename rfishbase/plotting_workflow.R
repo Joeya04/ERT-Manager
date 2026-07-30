@@ -58,6 +58,13 @@ plot_function <- plot_registry[[options$plot_type]]
 
 output_directory <- if (!is.null(options$output_directory)) options$output_directory else "output/plots"
 
+# Extract optional formatting parameters
+show_median <- if (!is.null(options$show_median)) options$show_median else TRUE
+include_risktable <- if (!is.null(options$include_risktable)) options$include_risktable else TRUE
+plot_width <- if (!is.null(options$width)) options$width else 8
+plot_height <- if (!is.null(options$height)) options$height else 6
+plot_dpi <- if (!is.null(options$dpi)) options$dpi else 300
+
 # Determine whether grouping is requested
 group_by <- options$group_by
 has_grouping <- !is.null(group_by) && group_by != "None" && group_by != ""
@@ -68,7 +75,12 @@ if (options$output_mode == "single") {
         mapping = options$mapping,
         title = options$title,
         output_directory = output_directory,
-        output_file = if (!is.null(options$output_file)) options$output_file else NULL
+        output_file = if (!is.null(options$output_file)) options$output_file else NULL,
+        show_median = show_median,
+        include_risktable = include_risktable,
+        width = plot_width,
+        height = plot_height,
+        dpi = plot_dpi
     )
 } else if (options$output_mode == "grouped") {
     if (has_grouping) {
@@ -78,7 +90,12 @@ if (options$output_mode == "single") {
             plot_function = plot_function,
             mapping = options$mapping,
             title = options$title,
-            output_directory = output_directory
+            output_directory = output_directory,
+            show_median = show_median,
+            include_risktable = include_risktable,
+            width = plot_width,
+            height = plot_height,
+            dpi = plot_dpi
         )
     } else {
         # No group_by specified — fall back to single plot
@@ -87,7 +104,12 @@ if (options$output_mode == "single") {
             mapping = options$mapping,
             title = options$title,
             output_directory = output_directory,
-            output_file = if (!is.null(options$output_file)) options$output_file else NULL
+            output_file = if (!is.null(options$output_file)) options$output_file else NULL,
+            show_median = show_median,
+            include_risktable = include_risktable,
+            width = plot_width,
+            height = plot_height,
+            dpi = plot_dpi
         )
     }
 } else if (options$output_mode == "both") {
@@ -96,7 +118,12 @@ if (options$output_mode == "single") {
         mapping = options$mapping,
         title = options$title,
         output_directory = output_directory,
-        output_file = if (!is.null(options$output_file)) options$output_file else NULL
+        output_file = if (!is.null(options$output_file)) options$output_file else NULL,
+        show_median = show_median,
+        include_risktable = include_risktable,
+        width = plot_width,
+        height = plot_height,
+        dpi = plot_dpi
     )
 
     if (has_grouping) {
@@ -106,7 +133,12 @@ if (options$output_mode == "single") {
             plot_function = plot_function,
             mapping = options$mapping,
             title = options$title,
-            output_directory = output_directory
+            output_directory = output_directory,
+            show_median = show_median,
+            include_risktable = include_risktable,
+            width = plot_width,
+            height = plot_height,
+            dpi = plot_dpi
         )
     } else {
         grouped_plots <- character(0)
@@ -123,7 +155,14 @@ manifest <- list(
     output_mode = options$output_mode,
     group_by = if (!is.null(group_by) && group_by != "None") group_by else NA,
     number_of_plots = length(plot_files),
-    plots = plot_files
+    plots = plot_files,
+    settings = list(
+        show_median = show_median,
+        include_risktable = include_risktable,
+        width = plot_width,
+        height = plot_height,
+        dpi = plot_dpi
+    )
 )
 
 write_json(manifest, manifest_file, pretty = TRUE, auto_unbox = TRUE)

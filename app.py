@@ -1,7 +1,9 @@
 # App interface for the Shiny app (in Python)
 
+import base64
 import json
 import os
+import shutil
 import tempfile
 
 import pandas as pd
@@ -10,6 +12,11 @@ from shiny import App, reactive, render, ui
 from controller.plotting_controller import run_plot
 from controller.workflow_controller import load_workbook
 from controller.fishbase_controller import run_fishbase
+from controller.export_controller import run_export_plots
+
+
+# Shared output directory — accessible across tabs
+shared_output_dir = reactive.Value(None)
 
 
 app_ui = ui.page_fluid(
@@ -107,9 +114,24 @@ app_ui = ui.page_fluid(
             ui.input_select("plot_type", "Plot Type", ["survival", "dumbbell"]),
             ui.input_radio_buttons("output_mode", "Output", ["single", "grouped", "both"]),
             ui.input_text("plot_title", "Plot title", value="ERT Plot"),
+            ui.h4("Plot Formatting"),
+            ui.input_numeric("plot_width", "Plot Width (inches)", value=8, min=4, max=20, step=0.5),
+            ui.input_numeric("plot_height", "Plot Height (inches)", value=6, min=4, max=20, step=0.5),
+            ui.input_numeric("plot_dpi", "DPI", value=300, min=72, max=600, step=10),
+            ui.input_checkbox("show_median", "Show Median Line", value=True),
+            ui.input_checkbox("include_risktable", "Include Risk Table", value=True),
             ui.input_action_button("generate_plots", "Generate"),
             ui.output_text_verbatim("plot_status"),
             ui.output_text_verbatim("plot_manifest"),
+            ui.h3("Plot Preview"),
+            ui.output_ui("plot_preview"),
+            ui.h3("Export"),
+            ui.input_text("export_dir", "Export Directory", value=""),
+            ui.input_action_button("browse_dir", "Browse for Directory"),
+            ui.input_checkbox("create_subdir", "Create new subdirectory", value=True),
+            ui.input_text("subdir_name", "Subdirectory name", value="ERT_Plots"),
+            ui.input_action_button("export_plots", "Export Plots to Folder"),
+            ui.output_text_verbatim("export_status"),
         )
     )
 )
@@ -297,6 +319,11 @@ def server(input, output, session):
             },
             "title": input.plot_title(),
             "output_directory": output_dir,
+            "show_median": input.show_median(),
+            "include_risktable": input.include_risktable(),
+            "width": input.plot_width(),
+            "height": input.plot_height(),
+            "dpi": input.plot_dpi(),
         }
 
         try:
@@ -323,6 +350,92 @@ def server(input, output, session):
             return ""
         return json.dumps(manifest, indent=2)
 
+    @output
+    @render.ui
+    def plot_preview():
+        """Display generated plots as images in the app using data URIs."""
+        manifest = plot_manifest_state()
+        if not manifest or "error" in manifest:
+            return ui.p("No plots to display.")
+
+        plot_files = manifest.get("plots", [])
+        if not plot_files:
+            return ui.p("No plots to display.")
+
+        # Build image tags for each plot file using data URIs
+        image_tags = []
+        for plot_file in plot_files:
+            if os.path.exists(plot_file):
+                filename = os.path.basename(plot_file)
+                try:
+                    with open(plot_file, "rb") as img_file:
+                        encoded = base64.b64encode(img_file.read()).decode("utf-8")
+                    data_uri = f"data:image/png;base64,{encoded}"
+                    image_tags.append(
+                        ui.tags.div(
+                            ui.tags.h4(filename),
+                            ui.tags.img(src=data_uri, style="max-width: 100%; height: auto;"),
+                            ui.tags.hr(),
+                        )
+                    )
+                except Exception:
+                    image_tags.append(
+                        ui.tags.div(
+                            ui.tags.h4(filename),
+                            ui.tags.p("Unable to load image."),
+                            ui.tags.hr(),
+                        )
+                    )
+
+        if not image_tags:
+            return ui.p("Plot files not found on disk.")
+
+        return ui.tags.div(*image_tags)
+
+    @reactive.effect
+    @reactive.event(input.browse_dir)
+    def _browse_directory():
+        """Open a directory browser dialog.
+
+        In a browser-based Shiny app, we can't directly open a file dialog.
+        Instead, we use a text input for the user to enter a path.
+        This is a placeholder — in production, you might use a custom
+        JavaScript file browser or a different approach.
+        """
+        pass
+
+    @reactive.effect
+    @reactive.event(input.export_plots)
+    def _export_plots():
+        """Export generated plots to the user-selected directory."""
+        manifest = plot_manifest_state()
+        if not manifest or "error" in manifest:
+            export_status_state.set("No plots to export.")
+            return
+
+        target_dir = input.export_dir()
+        if not target_dir:
+            export_status_state.set("Please specify an export directory.")
+            return
+
+        # Use the export controller to handle the export
+        result = run_export_plots(
+            plot_manifest=manifest,
+            target_dir=target_dir,
+            create_subdir=input.create_subdir(),
+            subdir_name=input.subdir_name(),
+        )
+
+        # Update shared output directory so other tabs can use it
+        shared_output_dir.set(result["metadata"]["target_dir"])
+
+        export_status_state.set(result["report"])
+
+    @output
+    @render.text
+    def export_status():
+        return export_status_state() if export_status_state() is not None else ""
+
 
 # Reactive storage
 residence_chart_data = reactive.Value(None)
@@ -330,5 +443,6 @@ generated_status_state = reactive.Value(None)
 fishbase_lookup_data = reactive.Value(None)
 fishbase_status_state = reactive.Value(None)
 plot_manifest_state = reactive.Value({})
+export_status_state = reactive.Value(None)
 
 app = App(app_ui, server)

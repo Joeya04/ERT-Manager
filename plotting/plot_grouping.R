@@ -4,7 +4,7 @@
 # Generic grouped plotting functions
 #
 # Called by:
-#     plot_workflow.R
+#     plotting_workflow.R
 #
 # Depends on:
 #     basic_plots.R
@@ -23,7 +23,12 @@ generate_grouped_plots <- function(
     plot_function,
     mapping,
     title,
-    output_directory
+    output_directory,
+    show_median = TRUE,
+    include_risktable = TRUE,
+    width = 8,
+    height = 6,
+    dpi = 300
 ) {
 
     if (!dir.exists(output_directory)) {
@@ -53,7 +58,12 @@ generate_grouped_plots <- function(
             mapping = mapping,
             title = group_title,
             output_directory = output_directory,
-            output_file = output_file
+            output_file = output_file,
+            show_median = show_median,
+            include_risktable = include_risktable,
+            width = width,
+            height = height,
+            dpi = dpi
         )
 
         output_files <- c(output_files, output_file)

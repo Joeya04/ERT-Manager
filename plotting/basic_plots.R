@@ -3,7 +3,7 @@ library(ggsurvfit)
 library(survival)
 library(ggplot2)
 
-create_kmplot <- function(fit, title, show_median = TRUE, include_risktable = TRUE, output_file = NULL) {
+create_kmplot <- function(fit, title, show_median = TRUE, include_risktable = TRUE, output_file = NULL, width = 8, height = 6, dpi = 300) {
 
     if (is.null(output_file)) {
         output_file <- "kmplot.png"
@@ -43,7 +43,7 @@ create_kmplot <- function(fit, title, show_median = TRUE, include_risktable = TR
         dir.create(dirname(output_file), recursive = TRUE, showWarnings = FALSE)
     }
 
-    ggsave(output_file, plot = p, width = 8, height = 6, dpi = 300)
+    ggsave(output_file, plot = p, width = width, height = height, dpi = dpi)
 
     invisible(output_file)
 }
@@ -53,7 +53,10 @@ generate_median_dumbbell_plot <- function(
     group_var,
     time_var,
     status_var,
-    output_file = NULL
+    output_file = NULL,
+    width = 8,
+    height = 6,
+    dpi = 300
 ) {
 
     data$SurvObj <- survival::Surv(
@@ -122,14 +125,14 @@ generate_median_dumbbell_plot <- function(
         if (!dir.exists(dirname(output_file))) {
             dir.create(dirname(output_file), recursive = TRUE, showWarnings = FALSE)
         }
-        ggsave(output_file, plot = p, width = 8, height = 6, dpi = 300)
+        ggsave(output_file, plot = p, width = width, height = height, dpi = dpi)
     }
 
     return(p)
 
 }
 
-build_kmplots <- function(dataframe, mapping, title, output_directory, output_file = NULL, show_median = TRUE, include_risktable = TRUE) {
+build_kmplots <- function(dataframe, mapping, title, output_directory, output_file = NULL, show_median = TRUE, include_risktable = TRUE, width = 8, height = 6, dpi = 300) {
 
     if (!dir.exists(output_directory)) {
         dir.create(output_directory, recursive = TRUE, showWarnings = FALSE)
@@ -167,13 +170,16 @@ build_kmplots <- function(dataframe, mapping, title, output_directory, output_fi
         title = title,
         show_median = show_median,
         include_risktable = include_risktable,
-        output_file = output_file
+        output_file = output_file,
+        width = width,
+        height = height,
+        dpi = dpi
     )
 
     return(output_file)
 }
 
-build_median_dumbbell_plots <- function(dataframe, mapping, title, output_directory, output_file = NULL) {
+build_median_dumbbell_plots <- function(dataframe, mapping, title, output_directory, output_file = NULL, show_median = TRUE, include_risktable = TRUE, width = 8, height = 6, dpi = 300) {
 
     if (!dir.exists(output_directory)) {
         dir.create(output_directory, recursive = TRUE, showWarnings = FALSE)
@@ -196,12 +202,15 @@ build_median_dumbbell_plots <- function(dataframe, mapping, title, output_direct
         group_var = group_var,
         time_var = time_var,
         status_var = status_var,
-        output_file = output_file
+        output_file = output_file,
+        width = width,
+        height = height,
+        dpi = dpi
     )
 
     if (!is.null(title)) {
         p <- p + labs(title = title)
-        ggsave(output_file, plot = p, width = 8, height = 6, dpi = 300)
+        ggsave(output_file, plot = p, width = width, height = height, dpi = dpi)
     }
 
     return(output_file)
