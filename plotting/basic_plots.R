@@ -61,6 +61,12 @@ generate_median_dumbbell_plot <- function(
         data[[status_var]]
     )
 
+    # Handle NULL group_var by using a constant grouping
+    if (is.null(group_var)) {
+        data$.dummy_group <- "All"
+        group_var <- ".dummy_group"
+    }
+
     fit <- survival::survfit(
         as.formula(paste("SurvObj ~", group_var)),
         data = data
@@ -107,8 +113,8 @@ generate_median_dumbbell_plot <- function(
         ) +
         labs(
             x = "Median Residence Time",
-            y = group_var,
-            title = paste("Median Residence by", group_var)
+            y = if (is.null(group_var) || group_var == ".dummy_group") "Group" else group_var,
+            title = if (is.null(group_var) || group_var == ".dummy_group") "Median Residence Time" else paste("Median Residence by", group_var)
         ) +
         theme_minimal()
 
@@ -137,8 +143,8 @@ build_kmplots <- function(dataframe, mapping, title, output_directory, output_fi
     time_var <- mapping[["time_var"]]
     status_var <- mapping[["status_var"]]
 
-    if (is.null(group_var) || is.null(time_var) || is.null(status_var)) {
-        stop("A valid mapping with group_var, time_var, and status_var is required for survival plots.")
+    if (is.null(time_var) || is.null(status_var)) {
+        stop("A valid mapping with time_var and status_var is required for survival plots.")
     }
 
     dataframe$SurvObj <- survival::Surv(
@@ -146,10 +152,15 @@ build_kmplots <- function(dataframe, mapping, title, output_directory, output_fi
         dataframe[[status_var]]
     )
 
-    fit <- survival::survfit(
-        as.formula(paste("SurvObj ~", group_var)),
-        data = dataframe
-    )
+    # Handle NULL group_var by using ~ 1 (no grouping)
+    if (is.null(group_var)) {
+        fit <- survival::survfit(SurvObj ~ 1, data = dataframe)
+    } else {
+        fit <- survival::survfit(
+            as.formula(paste("SurvObj ~", group_var)),
+            data = dataframe
+        )
+    }
 
     create_kmplot(
         fit = fit,
@@ -176,8 +187,8 @@ build_median_dumbbell_plots <- function(dataframe, mapping, title, output_direct
     time_var <- mapping[["time_var"]]
     status_var <- mapping[["status_var"]]
 
-    if (is.null(group_var) || is.null(time_var) || is.null(status_var)) {
-        stop("A valid mapping with group_var, time_var, and status_var is required for dumbbell plots.")
+    if (is.null(time_var) || is.null(status_var)) {
+        stop("A valid mapping with time_var and status_var is required for dumbbell plots.")
     }
 
     p <- generate_median_dumbbell_plot(

@@ -8,7 +8,8 @@ import pandas as pd
 from shiny import App, reactive, render, ui
 
 from controller.plotting_controller import run_plot
-from controller.workflow_controller import run_analysis
+from controller.workflow_controller import load_workbook
+from controller.fishbase_controller import run_fishbase
 
 
 app_ui = ui.page_fluid(
@@ -53,6 +54,7 @@ app_ui = ui.page_fluid(
                 "or misappropriation of your data under any circumstances."
             ),
         ),
+
         ui.nav_panel(
             "Generating Species Residence Tables",
             ui.page_sidebar(
@@ -82,29 +84,33 @@ app_ui = ui.page_fluid(
             ),
         ),
         ui.nav_panel(
-            "Fishbase Lookup",
-            ui.h2("Using fishbase data"),
+            "Fishbase Lookup Tool",
+            ui.h2("Gathering Species Information from Fishbase"),
+            ui.p("This tool matches the scientific names of your organisms with fishbase records. Diet, Ecology, and information on specific food items are available"
+                 " Fishbase reference numbers are available, but full text citation translation will be integrated later"),
             ui.input_file("fishbase_input", "Upload Data"),
-            ui.input_select("fishbase_data_source", "Use data from", ["Generated tables", "Uploaded data", "None"]),
+            ui.input_select("fishbase_data_source", "Use data from", ["Translated Residence Charts", "Uploaded data", "None"]),
+            #Mapping for each type of analysis
             ui.input_select("lookup_source", "Database", ["FishBase", "SeaLifeBase"]),
+            #ui.input_select("analysis type", "list", ["Ecology", "Fooditems", "Diet"]),
             ui.input_action_button("run_species", "Run Lookup"),
             ui.output_text_verbatim("species_status"),
         ),
         ui.nav_panel(
             "Visualization",
             ui.h2("Visualization"),
-            ui.input_select("plot_data_source", "Use data from", ["Generated tables", "Fishbase lookup", "Uploaded data", "None"]),
+            ui.input_select("plot_data_source", "Use data from", ["Translated Residence Charts", "Fishbase lookup", "Uploaded data", "None"]),
             ui.input_file("visualization_input", "Upload Data"),
-            ui.input_select("group_by", "Group By", ["Order", "Family", "trophic_classs"]),
-            ui.input_text("time_var", "Time column", value="time"),
-            ui.input_text("status_var", "Status column", value="status"),
+            ui.input_selectize("group_by", "Group By", choices=[], selected=None),
+            ui.input_selectize("time_var", "Time column", choices=[], selected=None),
+            ui.input_selectize("status_var", "Status column", choices=[], selected=None),
             ui.input_select("plot_type", "Plot Type", ["survival", "dumbbell"]),
             ui.input_radio_buttons("output_mode", "Output", ["single", "grouped", "both"]),
             ui.input_text("plot_title", "Plot title", value="ERT Plot"),
             ui.input_action_button("generate_plots", "Generate"),
             ui.output_text_verbatim("plot_status"),
             ui.output_text_verbatim("plot_manifest"),
-        ),
+        )
     )
 )
 
@@ -131,8 +137,8 @@ def server(input, output, session):
 
     def _resolve_fishbase_data():
         source_name = input.fishbase_data_source()
-        if source_name == "Generated tables" and generated_table_data() is not None:
-            return generated_table_data()
+        if source_name == "Translated Residence Charts" and residence_chart_data() is not None:
+            return residence_chart_data()
 
         uploaded_files = input.fishbase_input()
         if uploaded_files:
@@ -144,8 +150,8 @@ def server(input, output, session):
         source_name = input.plot_data_source()
         if source_name == "Fishbase lookup" and fishbase_lookup_data() is not None:
             return fishbase_lookup_data()
-        if source_name == "Generated tables" and generated_table_data() is not None:
-            return generated_table_data()
+        if source_name == "Translated Residence Charts" and residence_chart_data() is not None:
+            return residence_chart_data()
 
         uploaded_files = input.visualization_input()
         if uploaded_files:
@@ -154,27 +160,82 @@ def server(input, output, session):
         if source_name != "None":
             if fishbase_lookup_data() is not None:
                 return fishbase_lookup_data()
-            if generated_table_data() is not None:
-                return generated_table_data()
+            if residence_chart_data() is not None:
+                return residence_chart_data()
 
         return None
+
+    # Reactive value that holds the currently resolved visualization dataframe.
+    # Used to dynamically populate the group_by, time_var, and status_var
+    # selectize inputs with the columns of whatever data is available.
+    viz_data = reactive.Value(None)
+
+    @reactive.effect
+    def _update_column_choices():
+        """Update group_by, time_var, and status_var choices based on
+        the currently resolved visualization data."""
+        data = _resolve_visualization_data()
+        viz_data.set(data)
+
+        if data is None or not hasattr(data, "columns"):
+            ui.update_selectize(
+                session, "group_by", choices=[], selected=None,
+                server=False,
+            )
+            ui.update_selectize(
+                session, "time_var", choices=[], selected=None,
+                server=False,
+            )
+            ui.update_selectize(
+                session, "status_var", choices=[], selected=None,
+                server=False,
+            )
+            return
+
+        columns = list(data.columns)
+
+        # Pick sensible defaults for time_var and status_var
+        time_default = "yearfrac" if "yearfrac" in columns else (
+            "time" if "time" in columns else columns[0]
+        )
+        status_default = "status" if "status" in columns else (
+            columns[1] if len(columns) > 1 else columns[0]
+        )
+
+        ui.update_selectize(
+            session, "group_by", choices=columns, selected=None,
+            server=False,
+        )
+        ui.update_selectize(
+            session, "time_var", choices=columns, selected=time_default,
+            server=False,
+        )
+        ui.update_selectize(
+            session, "status_var", choices=columns, selected=status_default,
+            server=False,
+        )
 
     @reactive.effect
     @reactive.event(input.load_workbook)
     def _load_workbook():
         uploaded_files = input.ert_input()
         if not uploaded_files:
-            generated_table_data.set(None)
+            residence_chart_data.set(None)
             generated_status_state.set("No workbook was uploaded.")
             return
 
         path = uploaded_files[0]["datapath"]
+
+        # Also get the sheet index file if uploaded
+        index_files = input.index_input()
+        index_path = index_files[0]["datapath"] if index_files else None
+
         try:
-            analysis = run_analysis(path)
-            generated_table_data.set(analysis.get("data"))
+            analysis = load_workbook(path, sheet_index_path=index_path)
+            residence_chart_data.set(analysis.raw_df)
             generated_status_state.set("Workbook loaded and prepared for downstream analysis.")
         except Exception as exc:
-            generated_table_data.set(None)
+            residence_chart_data.set(None)
             generated_status_state.set(f"Workbook load failed: {exc}")
 
     @output
@@ -192,8 +253,20 @@ def server(input, output, session):
             return
 
         try:
-            fishbase_lookup_data.set(data)
-            fishbase_status_state.set(f"Prepared {len(data)} rows for {input.lookup_source()}.")
+            result = run_fishbase(data)
+
+            # run_fishbase returns a dict with a 'dataframe' key
+            if isinstance(result, dict):
+                output_df = result.get("dataframe")
+                fishbase_lookup_data.set(output_df)
+                fishbase_status_state.set(
+                    f"Fishbase lookup complete. {len(output_df) if output_df is not None else 0} rows returned."
+                )
+            else:
+                fishbase_lookup_data.set(result)
+                fishbase_status_state.set(
+                    f"Fishbase lookup complete. {len(result)} rows returned."
+                )
         except Exception as exc:
             fishbase_lookup_data.set(None)
             fishbase_status_state.set(f"Fishbase lookup failed: {exc}")
@@ -252,7 +325,7 @@ def server(input, output, session):
 
 
 # Reactive storage
-generated_table_data = reactive.Value(None)
+residence_chart_data = reactive.Value(None)
 generated_status_state = reactive.Value(None)
 fishbase_lookup_data = reactive.Value(None)
 fishbase_status_state = reactive.Value(None)
