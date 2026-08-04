@@ -3,7 +3,6 @@
 import base64
 import json
 import os
-import shutil
 import tempfile
 
 import pandas as pd
@@ -12,8 +11,19 @@ from shiny import App, reactive, render, ui
 from controller.plotting_controller import run_plot
 from controller.workflow_controller import load_workbook
 from controller.fishbase_controller import run_fishbase
-from controller.export_controller import run_export_plots
+from controller.export_controller import run_export_plots, run_export_data
 
+
+# Reactive storage — declared at module level so they are available
+# when the server function is called. These are per-session in a
+# production deployment; for now they are module-level singletons.
+residence_chart_data = reactive.Value(None)
+generated_status_state = reactive.Value(None)
+fishbase_lookup_data = reactive.Value(None)
+fishbase_status_state = reactive.Value(None)
+fishbase_export_status_state = reactive.Value(None)
+plot_manifest_state = reactive.Value({})
+export_status_state = reactive.Value(None)
 
 # Shared output directory — accessible across tabs
 shared_output_dir = reactive.Value(None)
@@ -70,8 +80,8 @@ app_ui = ui.page_fluid(
                         "Upload your ERT Workbook Table and Sheet Index Table  using the file upload buttons below. "
                         "The ERT Workbook Table should contain the data for your study organisms, while the Sheet Index Table should provide information about the structure of your workbook."
                     ),
-                    ui.input_file("ert_input", "Upload ERT Workbook Table"),
-                    ui.input_file("index_input", "Upload Sheet Index Table"),
+                    ui.input_file("ert_input", "Upload ERT Workbook Table", accept=[".csv", ".xlsx", ".xls"], multiple=False),
+                    ui.input_file("index_input", "Upload Sheet Index Table", accept=[".csv", ".xlsx", ".xls"], multiple=False),
                     ui.input_action_button("load_workbook", "Load Workbook"),
                     ui.output_text_verbatim("load_status"),
                     ui.output_text_verbatim("generated_status"),
@@ -95,38 +105,55 @@ app_ui = ui.page_fluid(
             ui.h2("Gathering Species Information from Fishbase"),
             ui.p("This tool matches the scientific names of your organisms with fishbase records. Diet, Ecology, and information on specific food items are available"
                  " Fishbase reference numbers are available, but full text citation translation will be integrated later"),
-            ui.input_file("fishbase_input", "Upload Data"),
+            ui.input_file("fishbase_input", "Upload Data", accept=[".csv", ".xlsx", ".xls"], multiple=False),
             ui.input_select("fishbase_data_source", "Use data from", ["Translated Residence Charts", "Uploaded data", "None"]),
             #Mapping for each type of analysis
             ui.input_select("lookup_source", "Database", ["FishBase", "SeaLifeBase"]),
-            #ui.input_select("analysis type", "list", ["Ecology", "Fooditems", "Diet"]),
+            ui.input_select("species_col", "Scientific Name Column", choices=[], selected=None),
             ui.input_action_button("run_species", "Run Lookup"),
             ui.output_text_verbatim("species_status"),
+            ui.input_text("export_dir", "Export Directory", value=""),
+            ui.p("Enter the full path to the directory where data will be exported.", style="font-size: 12px; color: gray;"),
+            ui.input_action_button("export_fishbase_summary", "Export Summary Table (Excel)"),
+            ui.input_action_button("export_fishbase_joined", "Export Joined Table (Excel)"),
+            ui.output_text_verbatim("fishbase_export_status"),
+            ui.output_text_verbatim("shared_output_info"),
         ),
         ui.nav_panel(
             "Visualization",
             ui.h2("Visualization"),
-            ui.input_select("plot_data_source", "Use data from", ["Translated Residence Charts", "Fishbase lookup", "Uploaded data", "None"]),
-            ui.input_file("visualization_input", "Upload Data"),
-            ui.input_selectize("group_by", "Group By", choices=[], selected=None),
-            ui.input_selectize("time_var", "Time column", choices=[], selected=None),
-            ui.input_selectize("status_var", "Status column", choices=[], selected=None),
-            ui.input_select("plot_type", "Plot Type", ["survival", "dumbbell"]),
-            ui.input_radio_buttons("output_mode", "Output", ["single", "grouped", "both"]),
-            ui.input_text("plot_title", "Plot title", value="ERT Plot"),
-            ui.h4("Plot Formatting"),
-            ui.input_numeric("plot_width", "Plot Width (inches)", value=8, min=4, max=20, step=0.5),
-            ui.input_numeric("plot_height", "Plot Height (inches)", value=6, min=4, max=20, step=0.5),
-            ui.input_numeric("plot_dpi", "DPI", value=300, min=72, max=600, step=10),
-            ui.input_checkbox("show_median", "Show Median Line", value=True),
-            ui.input_checkbox("include_risktable", "Include Risk Table", value=True),
-            ui.input_action_button("generate_plots", "Generate"),
+            # Horizontal layout: Upload items | Plot customization
+            ui.row(
+                ui.column(
+                    6,
+                    ui.h4("Data Source & Upload"),
+                    ui.input_select("plot_data_source", "Use data from", ["Translated Residence Charts", "Fishbase lookup", "Uploaded data", "None"]),
+                    ui.input_file("visualization_input", "Upload Data", accept=[".csv", ".xlsx", ".xls"], multiple=False),
+                    ui.input_selectize("group_by", "Group By", choices=[], selected=None),
+                    ui.input_selectize("time_var", "Time column", choices=[], selected=None),
+                    ui.input_selectize("status_var", "Status column", choices=[], selected=None),
+                ),
+                ui.column(
+                    6,
+                    ui.h4("Plot Customization"),
+                    ui.input_select("plot_type", "Plot Type", ["survival", "dumbbell"]),
+                    ui.input_radio_buttons("output_mode", "Output", ["single", "grouped", "both"]),
+                    ui.input_text("plot_title", "Plot title", value="ERT Plot"),
+                    ui.input_numeric("plot_width", "Plot Width (inches)", value=8, min=4, max=20, step=0.5),
+                    ui.input_numeric("plot_height", "Plot Height (inches)", value=6, min=4, max=20, step=0.5),
+                    ui.input_numeric("plot_dpi", "DPI", value=300, min=72, max=600, step=10),
+                    ui.input_checkbox("show_median", "Show Median Line", value=True),
+                    ui.input_checkbox("include_risktable", "Include Risk Table", value=True),
+                    ui.input_action_button("generate_plots", "Generate"),
+                ),
+            ),
             ui.output_text_verbatim("plot_status"),
             ui.output_text_verbatim("plot_manifest"),
             ui.h3("Plot Preview"),
             ui.output_ui("plot_preview"),
             ui.h3("Export"),
             ui.input_text("export_dir", "Export Directory", value=""),
+            ui.p("Enter the full path to the directory where plots and data will be exported.", style="font-size: 12px; color: gray;"),
             ui.input_action_button("browse_dir", "Browse for Directory"),
             ui.input_checkbox("create_subdir", "Create new subdirectory", value=True),
             ui.input_text("subdir_name", "Subdirectory name", value="ERT_Plots"),
@@ -159,6 +186,8 @@ def server(input, output, session):
 
     def _resolve_fishbase_data():
         source_name = input.fishbase_data_source()
+        if source_name == "None":
+            return None
         if source_name == "Translated Residence Charts" and residence_chart_data() is not None:
             return residence_chart_data()
 
@@ -170,6 +199,8 @@ def server(input, output, session):
 
     def _resolve_visualization_data():
         source_name = input.plot_data_source()
+        if source_name == "None":
+            return None
         if source_name == "Fishbase lookup" and fishbase_lookup_data() is not None:
             return fishbase_lookup_data()
         if source_name == "Translated Residence Charts" and residence_chart_data() is not None:
@@ -179,25 +210,18 @@ def server(input, output, session):
         if uploaded_files:
             return _read_dataframe_from_path(uploaded_files[0]["datapath"])
 
-        if source_name != "None":
-            if fishbase_lookup_data() is not None:
-                return fishbase_lookup_data()
-            if residence_chart_data() is not None:
-                return residence_chart_data()
-
         return None
 
-    # Reactive value that holds the currently resolved visualization dataframe.
-    # Used to dynamically populate the group_by, time_var, and status_var
-    # selectize inputs with the columns of whatever data is available.
-    viz_data = reactive.Value(None)
-
     @reactive.effect
+    @reactive.event(input.visualization_input, input.plot_data_source, residence_chart_data, fishbase_lookup_data)
     def _update_column_choices():
         """Update group_by, time_var, and status_var choices based on
-        the currently resolved visualization data."""
+        the currently resolved visualization data.
+
+        Triggered when a new file is uploaded or the data source selection
+        changes, so that the column dropdowns are always in sync with the
+        currently available data."""
         data = _resolve_visualization_data()
-        viz_data.set(data)
 
         if data is None or not hasattr(data, "columns"):
             ui.update_selectize(
@@ -238,6 +262,38 @@ def server(input, output, session):
         )
 
     @reactive.effect
+    @reactive.event(input.fishbase_input, input.fishbase_data_source, residence_chart_data)
+    def _update_species_col_choices():
+        """Update the species column dropdown choices based on
+        the currently resolved fishbase data.
+
+        Triggered when a new file is uploaded or the data source
+        selection changes, so that the column dropdown is always
+        in sync with the available data."""
+        data = _resolve_fishbase_data()
+
+        if data is None or not hasattr(data, "columns"):
+            ui.update_select(
+                session, "species_col", choices=[], selected=None,
+            )
+            return
+
+        columns = list(data.columns)
+
+        # Pick a sensible default: prefer "Scientific Name", then "Species", etc.
+        default_col = None
+        for candidate in ["Scientific Name", "Species", "Sci_name", "scientificName"]:
+            if candidate in columns:
+                default_col = candidate
+                break
+        if default_col is None:
+            default_col = columns[0]
+
+        ui.update_select(
+            session, "species_col", choices=columns, selected=default_col,
+        )
+
+    @reactive.effect
     @reactive.event(input.load_workbook)
     def _load_workbook():
         uploaded_files = input.ert_input()
@@ -248,6 +304,12 @@ def server(input, output, session):
 
         path = uploaded_files[0]["datapath"]
 
+        # Validate file format
+        if not path.lower().endswith((".xlsx", ".xls")):
+            residence_chart_data.set(None)
+            generated_status_state.set("Please upload an Excel file (.xlsx or .xls).")
+            return
+
         # Also get the sheet index file if uploaded
         index_files = input.index_input()
         index_path = index_files[0]["datapath"] if index_files else None
@@ -256,6 +318,15 @@ def server(input, output, session):
             analysis = load_workbook(path, sheet_index_path=index_path)
             residence_chart_data.set(analysis.raw_df)
             generated_status_state.set("Workbook loaded and prepared for downstream analysis.")
+
+            # Validate that the loaded data has required columns for downstream analysis
+            required_cols = ["yearfrac", "status"]
+            missing_cols = [c for c in required_cols if c not in analysis.raw_df.columns]
+            if missing_cols:
+                generated_status_state.set(
+                    f"Warning: Loaded data is missing required columns: {missing_cols}. "
+                    f"Plotting and fishbase lookup may not work correctly."
+                )
         except Exception as exc:
             residence_chart_data.set(None)
             generated_status_state.set(f"Workbook load failed: {exc}")
@@ -264,6 +335,17 @@ def server(input, output, session):
     @render.text
     def load_status():
         return generated_status_state() if generated_status_state() is not None else "Workbook not loaded."
+
+    @output
+    @render.text
+    def generated_status():
+        """Display the generated status (e.g. row count after parsing)."""
+        data = residence_chart_data()
+        if data is None:
+            return ""
+        if hasattr(data, "shape"):
+            return f"Generated {data.shape[0]} row(s) x {data.shape[1]} column(s)."
+        return ""
 
     @reactive.effect
     @reactive.event(input.run_species)
@@ -274,8 +356,17 @@ def server(input, output, session):
             fishbase_status_state.set("No data available for fishbase lookup.")
             return
 
+        species_col = input.species_col()
+        if species_col is not None and species_col not in data.columns:
+            fishbase_status_state.set(f"Species column '{species_col}' not found in data.")
+            return
+
         try:
-            result = run_fishbase(data)
+            result = run_fishbase(
+                data,
+                species_col=species_col,
+                lookup_source=input.lookup_source(),
+            )
 
             # run_fishbase returns a dict with a 'dataframe' key
             if isinstance(result, dict):
@@ -299,6 +390,65 @@ def server(input, output, session):
         return fishbase_status_state() if fishbase_status_state() is not None else ""
 
     @reactive.effect
+    @reactive.event(input.export_fishbase_summary)
+    def _export_fishbase_summary():
+        """Export a summary table (1 record per unique scientific name) as Excel."""
+        data = fishbase_lookup_data()
+        if data is None:
+            fishbase_export_status_state.set("No fishbase data available to export.")
+            return
+
+        target_dir = input.export_dir()
+        if not target_dir or not os.path.isdir(target_dir):
+            fishbase_export_status_state.set("Please specify a valid export directory.")
+            return
+
+        # Determine the species column for grouping
+        species_col = input.species_col()
+        if species_col is None or species_col == "" or species_col not in data.columns:
+            # Try to find a species column
+            for candidate in ["Scientific Name", "Species", "Sci_name", "scientificName"]:
+                if candidate in data.columns:
+                    species_col = candidate
+                    break
+            if species_col is None:
+                fishbase_export_status_state.set("Could not determine the species column for summary.")
+                return
+
+        # Create summary: 1 record per unique scientific name
+        summary_df = data.groupby(species_col, dropna=False).first().reset_index()
+
+        result = run_export_data(
+            dataframes={"fishbase_summary": summary_df},
+            target_dir=target_dir,
+            formats=["excel"],
+        )
+
+        fishbase_export_status_state.set(result["report"])
+
+    @reactive.effect
+    @reactive.event(input.export_fishbase_joined)
+    def _export_fishbase_joined():
+        """Export the full joined table (user data + fishbase data) as Excel."""
+        data = fishbase_lookup_data()
+        if data is None:
+            fishbase_export_status_state.set("No fishbase data available to export.")
+            return
+
+        target_dir = input.export_dir()
+        if not target_dir or not os.path.isdir(target_dir):
+            fishbase_export_status_state.set("Please specify a valid export directory.")
+            return
+
+        result = run_export_data(
+            dataframes={"fishbase_joined": data},
+            target_dir=target_dir,
+            formats=["excel"],
+        )
+
+        fishbase_export_status_state.set(result["report"])
+
+    @reactive.effect
     @reactive.event(input.generate_plots)
     def _generate_plots():
         data = _resolve_visualization_data()
@@ -306,14 +456,21 @@ def server(input, output, session):
             plot_manifest_state.set({"error": "No data available for plotting."})
             return
 
+        # Validate required columns for survival analysis
+        required_cols = ["yearfrac", "status"]
+        missing_cols = [c for c in required_cols if c not in data.columns]
+        if missing_cols:
+            plot_manifest_state.set({"error": f"Data is missing required columns: {missing_cols}. Please ensure your data has 'yearfrac' and 'status' columns."})
+            return
+
         csv_path = _write_dataframe_to_csv(data)
-        output_dir = os.path.join(tempfile.gettempdir(), "ert_plots")
+        output_dir = tempfile.mkdtemp(prefix="ert_plots_")
         options = {
             "plot_type": input.plot_type(),
             "output_mode": input.output_mode(),
-            "group_by": None if input.group_by() == "None" else input.group_by(),
+            "group_by": input.group_by(),
             "mapping": {
-                "group_var": None if input.group_by() == "None" else input.group_by(),
+                "group_var": input.group_by(),
                 "time_var": input.time_var(),
                 "status_var": input.status_var(),
             },
@@ -324,6 +481,7 @@ def server(input, output, session):
             "width": input.plot_width(),
             "height": input.plot_height(),
             "dpi": input.plot_dpi(),
+            "output_file": None,
         }
 
         try:
@@ -370,7 +528,9 @@ def server(input, output, session):
                 try:
                     with open(plot_file, "rb") as img_file:
                         encoded = base64.b64encode(img_file.read()).decode("utf-8")
-                    data_uri = f"data:image/png;base64,{encoded}"
+                    ext = os.path.splitext(plot_file)[1].lower()
+                    mime_type = "image/png" if ext == ".png" else "image/jpeg" if ext in (".jpg", ".jpeg") else "application/octet-stream"
+                    data_uri = f"data:{mime_type};base64,{encoded}"
                     image_tags.append(
                         ui.tags.div(
                             ui.tags.h4(filename),
@@ -395,14 +555,19 @@ def server(input, output, session):
     @reactive.effect
     @reactive.event(input.browse_dir)
     def _browse_directory():
-        """Open a directory browser dialog.
+        """Handle the 'Browse for Directory' button.
 
-        In a browser-based Shiny app, we can't directly open a file dialog.
-        Instead, we use a text input for the user to enter a path.
-        This is a placeholder — in production, you might use a custom
-        JavaScript file browser or a different approach.
+        Since we are using only Python and R (no JavaScript), we show
+        a notification to the user explaining how to specify a directory
+        path. The user enters the path manually in the text input above.
         """
-        pass
+        ui.notification_show(
+            "Please enter the full path to your export directory in the text box above. "
+            "On Windows, use backslashes (e.g., C:\\Users\\name\\Documents). "
+            "On Mac/Linux, use forward slashes (e.g., /Users/name/Documents).",
+            duration=10,
+            type="message",
+        )
 
     @reactive.effect
     @reactive.event(input.export_plots)
@@ -414,8 +579,8 @@ def server(input, output, session):
             return
 
         target_dir = input.export_dir()
-        if not target_dir:
-            export_status_state.set("Please specify an export directory.")
+        if not target_dir or not os.path.isdir(target_dir):
+            export_status_state.set("Please specify a valid export directory.")
             return
 
         # Use the export controller to handle the export
@@ -436,13 +601,19 @@ def server(input, output, session):
     def export_status():
         return export_status_state() if export_status_state() is not None else ""
 
+    @output
+    @render.text
+    def fishbase_export_status():
+        return fishbase_export_status_state() if fishbase_export_status_state() is not None else ""
 
-# Reactive storage
-residence_chart_data = reactive.Value(None)
-generated_status_state = reactive.Value(None)
-fishbase_lookup_data = reactive.Value(None)
-fishbase_status_state = reactive.Value(None)
-plot_manifest_state = reactive.Value({})
-export_status_state = reactive.Value(None)
+    @output
+    @render.text
+    def shared_output_info():
+        """Display the shared output directory from plot exports."""
+        dir_path = shared_output_dir()
+        if dir_path:
+            return f"Plots exported to: {dir_path}"
+        return ""
+
 
 app = App(app_ui, server)

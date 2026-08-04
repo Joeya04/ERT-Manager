@@ -3,9 +3,9 @@ library(rfishbase)
 
 ################################################################################
 # Pulls food items data from fishbase, creates a summary
-rfishbase_fooditems <- function(df){
+rfishbase_fooditems <- function(df, server = "fishbase"){
 
-    fooditems_df <- fooditems(df$Sci_name)
+    fooditems_df <- fooditems(df$Sci_name, server = server)
 
     fooditems_summary <- fooditems_df %>%
       transmute(

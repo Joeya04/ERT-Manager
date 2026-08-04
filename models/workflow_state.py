@@ -24,6 +24,18 @@ import pandas as pd
 
 @dataclass
 class WorkflowState:
+    """
+    Represents the state of the ERT analysis workflow.
+
+    Architecture Note:
+    The Shiny app (app.py) uses module-level reactive.Value() objects
+    for cross-tab UI state management (e.g., residence_chart_data,
+    fishbase_lookup_data, plot_manifest_state). WorkflowState is used
+    as a return type from load_workbook() and is not used for cross-tab
+    state sharing. This is a deliberate design choice: reactive values
+    provide automatic reactivity for UI updates, while WorkflowState
+    provides a structured data container for the workbook parsing pipeline.
+    """
 
     ########################################################
     # Session Information
@@ -32,6 +44,10 @@ class WorkflowState:
     session_name: str = "Untitled Session"
 
     workbook_path: Optional[str] = None
+
+    species_col: Optional[str] = None
+
+    lookup_source: str = "FishBase"
 
     ########################################################
     # Uploaded Data
@@ -43,8 +59,11 @@ class WorkflowState:
     # Workflow Outputs
     ########################################################
 
+    formatted_df: Optional[pd.DataFrame] = None
 
     fishbase_df: Optional[pd.DataFrame] = None
+
+    statistics_df: Optional[pd.DataFrame] = None
 
     ########################################################
     # Current Working Dataset

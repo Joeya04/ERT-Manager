@@ -2,10 +2,10 @@ library(dplyr)
 library(rfishbase)
 
 ################################################################################
-#Pulls diet data from fishbase, creates a summary, then exports it to excel
-rfishbase_diet <- function(df){
+# Pulls diet data from fishbase, creates a summary, then exports it to excel
+rfishbase_diet <- function(df, server = "fishbase"){
 
-    diet_df <- diet(df$Sci_name)
+    diet_df <- diet(df$Sci_name, server = server)
 
     diet_summary <- diet_df %>%
     transmute(

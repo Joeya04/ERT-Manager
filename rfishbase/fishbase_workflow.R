@@ -13,6 +13,8 @@ library(rfishbase)
 # Arguments:
 #     args[1] = input CSV file path
 #     args[2] = manifest JSON output path
+#     args[3] = species column name (optional, auto-detected if not provided)
+#     args[4] = database source: "FishBase" or "SeaLifeBase" (optional, defaults to "FishBase")
 #
 # Produces:
 #     A manifest JSON with:
@@ -29,6 +31,8 @@ if (length(args) < 2) {
 
 input_file <- args[1]
 manifest_file <- args[2]
+species_col_arg <- if (length(args) >= 3) args[3] else NULL
+db_source <- if (length(args) >= 4) args[4] else "FishBase"
 
 if (!file.exists(input_file)) {
     stop(paste("Input file not found:", input_file))
@@ -38,17 +42,31 @@ if (!file.exists(input_file)) {
 df <- read.csv(input_file, stringsAsFactors = FALSE)
 
 # Source helper functions
-source("rfishbase/fishbase_lookup.R")
 source("rfishbase/ecology.R")
 source("rfishbase/diet.R")
 source("rfishbase/fooditems.R")
 
 # Determine the species column name
-# The parser outputs a column named "Species"
-species_col <- if ("Species" %in% names(df)) "Species" else
-               if ("Sci_name" %in% names(df)) "Sci_name" else
-               if ("scientificName" %in% names(df)) "scientificName" else
-               names(df)[1]
+# Priority: explicit argument > known column names > first column
+# Recognizes: "Species", "Sci_name", "scientificName", "Scientific Name"
+if (!is.null(species_col_arg) && species_col_arg %in% names(df)) {
+    species_col <- species_col_arg
+} else {
+    species_col <- if ("Species" %in% names(df)) "Species" else
+                   if ("Sci_name" %in% names(df)) "Sci_name" else
+                   if ("scientificName" %in% names(df)) "scientificName" else
+                   if ("Scientific Name" %in% names(df)) "Scientific Name" else
+                   names(df)[1]
+}
+
+# Set the rfishbase server based on the database source
+if (db_source == "SeaLifeBase") {
+    # SeaLifeBase uses a different server; rfishbase supports this via
+    # the 'server' argument in load_taxa() and other functions
+    fb_server <- "sealifebase"
+} else {
+    fb_server <- "fishbase"
+}
 
 # Get unique species names
 species_list <- unique(df[[species_col]])
@@ -58,7 +76,7 @@ report_lines <- c()
 
 # Look up taxonomy for each species
 taxa_data <- tryCatch({
-    load_taxa()
+    load_taxa(server = fb_server)
 }, error = function(e) {
     report_lines <- c(report_lines, paste("Warning: load_taxa failed:", e$message))
     NULL
@@ -75,13 +93,12 @@ if (!is.null(taxa_data)) {
         Order = NA,
         Class = NA,
         Genus = NA
-
     )
 }
 
 # Look up ecology data
 ecology_summary <- tryCatch({
-    rfishbase_ecology(df = data.frame(Sci_name = species_list))
+    rfishbase_ecology(df = data.frame(Sci_name = species_list), server = fb_server)
 }, error = function(e) {
     report_lines <- c(report_lines, paste("Warning: ecology lookup failed:", e$message))
     NULL
@@ -89,7 +106,7 @@ ecology_summary <- tryCatch({
 
 # Look up diet data
 diet_combined <- tryCatch({
-    rfishbase_diet(df = data.frame(Sci_name = species_list))
+    rfishbase_diet(df = data.frame(Sci_name = species_list), server = fb_server)
 }, error = function(e) {
     report_lines <- c(report_lines, paste("Warning: diet lookup failed:", e$message))
     NULL
@@ -97,7 +114,7 @@ diet_combined <- tryCatch({
 
 # Look up food items data
 fooditems_combined <- tryCatch({
-    rfishbase_fooditems(df = data.frame(Sci_name = species_list))
+    rfishbase_fooditems(df = data.frame(Sci_name = species_list), server = fb_server)
 }, error = function(e) {
     report_lines <- c(report_lines, paste("Warning: fooditems lookup failed:", e$message))
     NULL
@@ -156,7 +173,9 @@ manifest <- list(
     metadata = list(
         species_count = length(species_list),
         record_count = nrow(result_df),
-        columns = names(result_df)
+        columns = names(result_df),
+        database_source = db_source,
+        species_column = species_col
     )
 )
 

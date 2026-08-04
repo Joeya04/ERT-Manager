@@ -1,5 +1,6 @@
 library(dplyr)
 library(rfishbase)
+library(readxl)
 
 
 ############################################################
@@ -16,7 +17,7 @@ library(rfishbase)
 #   A dataframe with Species, Family, and Order columns
 ############################################################
 match_species <- function(index_df, index_sheet) {
-    fish_df <- read.xlsx(index_df, sheet = index_sheet)
+    fish_df <- read_excel(index_df, sheet = index_sheet)
 
     taxa_data <- load_taxa()
 
@@ -43,7 +44,7 @@ match_species <- function(index_df, index_sheet) {
 ############################################################
 match_species_joined <- function(df) {
     df_names <- df %>% rename(
-        common_name = Species,
+        scientific_name = Species,
         entity_id = Individual,
         intro = Intro_date,
         exit = Exit_date,
@@ -68,7 +69,7 @@ match_species_joined <- function(df) {
         select(Species, Family, Order)
 
     matched_df <- matched %>%
-        left_join(df_names, by = c("Species" = "common_name"))
+        left_join(df_names, by = c("Species" = "scientific_name"))
 
     return(matched_df)
 }

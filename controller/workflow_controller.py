@@ -15,7 +15,6 @@ from models.workflow_state import WorkflowState
 from formatter.ERT_date_puller_shiny import parse_ert_workbook
 from controller.fishbase_controller import run_fishbase
 from controller.plotting_controller import run_plot
-from controller.export_controller import run_export
 
 
 ############################################################
@@ -91,7 +90,11 @@ def run_fishbase_step(workflow):
     run_fishbase returns a dict with a 'dataframe' key;
     we extract the DataFrame and store it on the workflow.
     """
-    result = run_fishbase(workflow.raw_df)
+    result = run_fishbase(
+        workflow.raw_df,
+        species_col=workflow.selections.get("species_col"),
+        lookup_source=workflow.selections.get("lookup_source", "FishBase"),
+    )
 
     if isinstance(result, dict):
         workflow.fishbase_df = result.get("dataframe")
