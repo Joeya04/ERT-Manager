@@ -225,16 +225,16 @@ def server(input, output, session):
 
         if data is None or not hasattr(data, "columns"):
             ui.update_selectize(
-                session, "group_by", choices=[], selected=None,
-                server=False,
+                "group_by", choices=[], selected=None,
+                server=False, session=session,
             )
             ui.update_selectize(
-                session, "time_var", choices=[], selected=None,
-                server=False,
+                "time_var", choices=[], selected=None,
+                server=False, session=session,
             )
             ui.update_selectize(
-                session, "status_var", choices=[], selected=None,
-                server=False,
+                "status_var", choices=[], selected=None,
+                server=False, session=session,
             )
             return
 
@@ -249,16 +249,16 @@ def server(input, output, session):
         )
 
         ui.update_selectize(
-            session, "group_by", choices=columns, selected=None,
-            server=False,
+            "group_by", choices=columns, selected=None,
+            server=False, session=session,
         )
         ui.update_selectize(
-            session, "time_var", choices=columns, selected=time_default,
-            server=False,
+            "time_var", choices=columns, selected=time_default,
+            server=False, session=session,
         )
         ui.update_selectize(
-            session, "status_var", choices=columns, selected=status_default,
-            server=False,
+            "status_var", choices=columns, selected=status_default,
+            server=False, session=session,
         )
 
     @reactive.effect
@@ -274,7 +274,8 @@ def server(input, output, session):
 
         if data is None or not hasattr(data, "columns"):
             ui.update_select(
-                session, "species_col", choices=[], selected=None,
+                "species_col", choices=[], selected=None,
+                session=session,
             )
             return
 
@@ -290,7 +291,8 @@ def server(input, output, session):
             default_col = columns[0]
 
         ui.update_select(
-            session, "species_col", choices=columns, selected=default_col,
+            "species_col", choices=columns, selected=default_col,
+            session=session,
         )
 
     @reactive.effect

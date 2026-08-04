@@ -2,11 +2,13 @@
 
 import json
 import os
-import subprocess
+import shutil
 import tempfile
 from pathlib import Path
 
 import pandas as pd
+
+from controller.rscript_utils import run_r_script
 
 
 # ----------------------------------------------------
@@ -55,8 +57,6 @@ def run_fishbase(df, species_col=None, lookup_source="FishBase"):
     #
     # Create a unique temp directory for this run
     #
-    import tempfile
-    import shutil
     temp_dir = tempfile.mkdtemp(prefix="ert_fishbase_")
     input_file = os.path.join(temp_dir, "fishbase_input.csv")
     manifest_file = os.path.join(temp_dir, "fishbase_manifest.json")
@@ -70,19 +70,15 @@ def run_fishbase(df, species_col=None, lookup_source="FishBase"):
         #
         # Run R workflow
         #
-        result = subprocess.run(
+        result = run_r_script(
             [
-                "Rscript",
                 str(R_SCRIPT),
                 input_file,
                 manifest_file,
                 str(species_col) if species_col else "",
                 str(lookup_source),
             ],
-            check=True,
             cwd=str(_BASE_DIR),
-            capture_output=True,
-            text=True,
         )
 
         #
