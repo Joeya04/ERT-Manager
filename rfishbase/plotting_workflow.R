@@ -11,7 +11,7 @@ library(ggplot2)
 create_kmplot <- function(fit, title, show_median = TRUE, include_risktable = TRUE, output_file = NULL, width = 8, height = 6, dpi = 300) {
 
     if (is.null(output_file)) {
-        output_file <- "kmplot.png"
+        output_file <- file.path(output_directory, "kmplot.png")
     }
 
     base_size <- 18
@@ -332,6 +332,10 @@ plot_function <- plot_registry[[options$plot_type]]
 
 output_directory <- if (!is.null(options$output_directory)) options$output_directory else "output/plots"
 
+# Normalize to forward slashes to prevent R from interpreting
+# backslash escape sequences (e.g. \U in \Users) as Unicode escapes
+output_directory <- gsub("\\\\", "/", output_directory)
+
 # Extract optional formatting parameters
 show_median <- if (!is.null(options$show_median)) options$show_median else TRUE
 include_risktable <- if (!is.null(options$include_risktable)) options$include_risktable else TRUE
@@ -339,97 +343,225 @@ plot_width <- if (!is.null(options$width)) options$width else 8
 plot_height <- if (!is.null(options$height)) options$height else 6
 plot_dpi <- if (!is.null(options$dpi)) options$dpi else 300
 
-# Determine whether grouping is requested
+# Extract subset options
+subset_var <- options$subset_var
+subset_value <- options$subset_value
+subset_mode <- if (!is.null(options$subset_mode)) options$subset_mode else "single"
+
+# Extract group_by (can be a list from multi-select or a single string)
 group_by <- options$group_by
-has_grouping <- !is.null(group_by) && group_by != "None" && group_by != ""
+if (is.list(group_by)) {
+    group_by <- unlist(group_by)
+}
+has_grouping <- !is.null(group_by) && length(group_by) > 0 && all(group_by != "None" && group_by != "")
 
-if (options$output_mode == "single") {
-    plot_files <- plot_function(
-        dataframe = df,
-        mapping = options$mapping,
-        title = options$title,
-        output_directory = output_directory,
-        output_file = if (!is.null(options$output_file)) options$output_file else NULL,
-        show_median = show_median,
-        include_risktable = include_risktable,
-        width = plot_width,
-        height = plot_height,
-        dpi = plot_dpi
-    )
-} else if (options$output_mode == "grouped") {
-    if (has_grouping) {
-        plot_files <- generate_grouped_plots(
-            dataframe = df,
-            group_by = group_by,
-            plot_function = plot_function,
-            mapping = options$mapping,
-            title = options$title,
-            output_directory = output_directory,
-            show_median = show_median,
-            include_risktable = include_risktable,
-            width = plot_width,
-            height = plot_height,
-            dpi = plot_dpi
-        )
-    } else {
-        # No group_by specified — fall back to single plot
-        plot_files <- plot_function(
-            dataframe = df,
-            mapping = options$mapping,
-            title = options$title,
-            output_directory = output_directory,
-            output_file = if (!is.null(options$output_file)) options$output_file else NULL,
-            show_median = show_median,
-            include_risktable = include_risktable,
-            width = plot_width,
-            height = plot_height,
-            dpi = plot_dpi
-        )
-    }
-} else if (options$output_mode == "both") {
-    single_plot <- plot_function(
-        dataframe = df,
-        mapping = options$mapping,
-        title = options$title,
-        output_directory = output_directory,
-        output_file = if (!is.null(options$output_file)) options$output_file else NULL,
-        show_median = show_median,
-        include_risktable = include_risktable,
-        width = plot_width,
-        height = plot_height,
-        dpi = plot_dpi
-    )
+# Helper: create a single plot (with strata if group_var is set)
+create_single_plot <- function(dataframe, group_vars, plot_function, mapping, title,
+                               output_directory, show_median, include_risktable,
+                               width, height, dpi, subset_label = "") {
+    full_title <- if (nzchar(subset_label)) paste(title, "-", subset_label) else title
+    plot_files <- character()
 
-    if (has_grouping) {
-        grouped_plots <- generate_grouped_plots(
-            dataframe = df,
-            group_by = group_by,
-            plot_function = plot_function,
-            mapping = options$mapping,
-            title = options$title,
+    if (has_grouping && length(group_vars) > 0) {
+        for (gb in group_vars) {
+            gb_mapping <- mapping
+            gb_mapping$group_var <- gb
+            gb_title <- if (length(group_vars) == 1) full_title else paste(full_title, "-", gb)
+            gb_output_file <- file.path(output_directory, paste0(gsub("[^A-Za-z0-9_-]", "_", gb), ".png"))
+            p_file <- plot_function(
+                dataframe = dataframe,
+                mapping = gb_mapping,
+                title = gb_title,
+                output_directory = output_directory,
+                output_file = gb_output_file,
+                show_median = show_median,
+                include_risktable = include_risktable,
+                width = width,
+                height = height,
+                dpi = dpi
+            )
+            plot_files <- c(plot_files, p_file)
+        }
+    } else {
+        gb_mapping <- mapping
+        gb_mapping$group_var <- NULL
+        p_file <- plot_function(
+            dataframe = dataframe,
+            mapping = gb_mapping,
+            title = full_title,
             output_directory = output_directory,
+            output_file = NULL,
             show_median = show_median,
             include_risktable = include_risktable,
-            width = plot_width,
-            height = plot_height,
-            dpi = plot_dpi
+            width = width,
+            height = height,
+            dpi = dpi
         )
-    } else {
-        grouped_plots <- character(0)
+        plot_files <- c(plot_files, p_file)
     }
 
-    plot_files <- c(single_plot, grouped_plots)
+    return(plot_files)
+}
+
+# Helper: create grouped plots (one per unique value of each group_var)
+create_grouped_plots <- function(dataframe, group_vars, plot_function, mapping, title,
+                                 output_directory, show_median, include_risktable,
+                                 width, height, dpi, subset_label = "") {
+    full_title <- if (nzchar(subset_label)) paste(title, "-", subset_label) else title
+    plot_files <- character()
+
+    if (has_grouping && length(group_vars) > 0) {
+        for (gb in group_vars) {
+            gb_mapping <- mapping
+            gb_mapping$group_var <- gb
+            grouped_files <- generate_grouped_plots(
+                dataframe = dataframe,
+                group_by = gb,
+                plot_function = plot_function,
+                mapping = gb_mapping,
+                title = full_title,
+                output_directory = output_directory,
+                show_median = show_median,
+                include_risktable = include_risktable,
+                width = width,
+                height = height,
+                dpi = dpi
+            )
+            plot_files <- c(plot_files, grouped_files)
+        }
+    } else {
+        gb_mapping <- mapping
+        gb_mapping$group_var <- NULL
+        p_file <- plot_function(
+            dataframe = dataframe,
+            mapping = gb_mapping,
+            title = full_title,
+            output_directory = output_directory,
+            output_file = NULL,
+            show_median = show_median,
+            include_risktable = include_risktable,
+            width = width,
+            height = height,
+            dpi = dpi
+        )
+        plot_files <- c(plot_files, p_file)
+    }
+
+    return(plot_files)
+}
+
+# Determine subset values to iterate over
+if (is.null(subset_var) || subset_var == "None" || subset_var == "") {
+    # No subsetting — use all data
+    subset_configs <- list(list(value = NULL, label = "All Data"))
+} else if (subset_mode == "single") {
+    # Single value — filter to selected value
+    if (is.null(subset_value) || subset_value == "None" || subset_value == "") {
+        # No value selected — use all data
+        subset_configs <- list(list(value = NULL, label = "All Data"))
+    } else {
+        subset_configs <- list(list(value = subset_value, label = paste("Subset:", subset_var, "=", subset_value)))
+    }
 } else {
-    stop("Unknown output mode.")
+    # Each unique value — create a plot for each
+    unique_vals <- sort(unique(df[[subset_var]]))
+    unique_vals <- unique_vals[!is.na(unique_vals)]
+    subset_configs <- lapply(unique_vals, function(v) {
+        list(value = v, label = paste("Subset:", subset_var, "=", v))
+    })
+}
+
+# Generate plots for each subset configuration
+plot_files <- character()
+
+for (sc in subset_configs) {
+    # Filter data for this subset
+    if (is.null(sc$value)) {
+        subset_df <- df
+    } else {
+        subset_df <- df[df[[subset_var]] == sc$value, ]
+    }
+
+    # Skip if no data after filtering
+    if (nrow(subset_df) == 0) next
+
+    subset_label <- sc$label
+
+    if (options$output_mode == "single") {
+        plot_files <- c(plot_files, create_single_plot(
+            dataframe = subset_df,
+            group_vars = group_by,
+            plot_function = plot_function,
+            mapping = options$mapping,
+            title = options$title,
+            output_directory = output_directory,
+            show_median = show_median,
+            include_risktable = include_risktable,
+            width = plot_width,
+            height = plot_height,
+            dpi = plot_dpi,
+            subset_label = subset_label
+        ))
+    } else if (options$output_mode == "grouped") {
+        plot_files <- c(plot_files, create_grouped_plots(
+            dataframe = subset_df,
+            group_vars = group_by,
+            plot_function = plot_function,
+            mapping = options$mapping,
+            title = options$title,
+            output_directory = output_directory,
+            show_median = show_median,
+            include_risktable = include_risktable,
+            width = plot_width,
+            height = plot_height,
+            dpi = plot_dpi,
+            subset_label = subset_label
+        ))
+    } else if (options$output_mode == "both") {
+        plot_files <- c(plot_files, create_single_plot(
+            dataframe = subset_df,
+            group_vars = group_by,
+            plot_function = plot_function,
+            mapping = options$mapping,
+            title = options$title,
+            output_directory = output_directory,
+            show_median = show_median,
+            include_risktable = include_risktable,
+            width = plot_width,
+            height = plot_height,
+            dpi = plot_dpi,
+            subset_label = subset_label
+        ))
+        plot_files <- c(plot_files, create_grouped_plots(
+            dataframe = subset_df,
+            group_vars = group_by,
+            plot_function = plot_function,
+            mapping = options$mapping,
+            title = options$title,
+            output_directory = output_directory,
+            show_median = show_median,
+            include_risktable = include_risktable,
+            width = plot_width,
+            height = plot_height,
+            dpi = plot_dpi,
+            subset_label = subset_label
+        ))
+    } else {
+        stop("Unknown output mode.")
+    }
 }
 
 manifest <- list(
     workflow = "plot_generation",
     plot_type = options$plot_type,
     output_mode = options$output_mode,
-    group_by = if (!is.null(group_by) && group_by != "None") group_by else NA,
+    group_by = if (has_grouping) as.list(group_by) else NA,
+    subset_var = if (!is.null(subset_var) && subset_var != "None") subset_var else NA,
+    subset_value = if (!is.null(subset_value) && subset_value != "None") subset_value else NA,
+    subset_mode = subset_mode,
     number_of_plots = length(plot_files),
     plots = plot_files,
+    output_directory = output_directory,
     settings = list(
         show_median = show_median,
         include_risktable = include_risktable,

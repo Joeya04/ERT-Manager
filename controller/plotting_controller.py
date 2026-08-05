@@ -38,7 +38,15 @@ def run_plot(input_csv, options, manifest_path=None, r_script=None):
     except FileNotFoundError as exc:
         raise RuntimeError("Rscript is not available on PATH.") from exc
     except RuntimeError as exc:
-        raise RuntimeError(str(exc)) from exc
+        # Include R script stderr/stdout in the error for debugging
+        details = str(exc)
+        if hasattr(exc, "__cause__") and exc.__cause__ is not None:
+            cause = exc.__cause__
+            if hasattr(cause, "stderr") and cause.stderr:
+                details += f"\nR stderr: {cause.stderr.strip()}"
+            if hasattr(cause, "stdout") and cause.stdout:
+                details += f"\nR stdout: {cause.stdout.strip()}"
+        raise RuntimeError(details) from exc
     finally:
         if temp_dir and os.path.exists(temp_dir):
             for file_name in os.listdir(temp_dir):

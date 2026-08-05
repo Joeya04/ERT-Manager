@@ -112,7 +112,7 @@ app_ui = ui.page_fluid(
             ui.input_select("species_col", "Scientific Name Column", choices=[], selected=None),
             ui.input_action_button("run_species", "Run Lookup"),
             ui.output_text_verbatim("species_status"),
-            ui.input_text("export_dir", "Export Directory", value=""),
+            ui.input_text("fishbase_export_dir", "Export Directory", value=""),
             ui.p("Enter the full path to the directory where data will be exported.", style="font-size: 12px; color: gray;"),
             ui.input_action_button("export_fishbase_summary", "Export Summary Table (Excel)"),
             ui.input_action_button("export_fishbase_joined", "Export Joined Table (Excel)"),
@@ -129,15 +129,19 @@ app_ui = ui.page_fluid(
                     ui.h4("Data Source & Upload"),
                     ui.input_select("plot_data_source", "Use data from", ["Translated Residence Charts", "Fishbase lookup", "Uploaded data", "None"]),
                     ui.input_file("visualization_input", "Upload Data", accept=[".csv", ".xlsx", ".xls"], multiple=False),
-                    ui.input_selectize("group_by", "Group By", choices=[], selected=None),
+                    ui.input_selectize("group_by", "Group By", choices=[], selected=None, multiple=True),
                     ui.input_selectize("time_var", "Time column", choices=[], selected=None),
                     ui.input_selectize("status_var", "Status column", choices=[], selected=None),
                 ),
                 ui.column(
                     6,
                     ui.h4("Plot Customization"),
-                    ui.input_select("plot_type", "Plot Type", ["survival", "dumbbell"]),
-                    ui.input_radio_buttons("output_mode", "Output", ["single", "grouped", "both"]),
+                    ui.input_radio_buttons("plot_type", "Plot Type", {"survival": "Kaplan-Meier Survival", "dumbbell": "Median Dumbbell"}),
+                    ui.input_radio_buttons("output_mode", "Output", {"single": "Single Plot", "grouped": "Grouped Plots", "both": "Both"}),
+                    ui.h4("Subset Options"),
+                    ui.input_selectize("subset_var", "Subset Variable", choices=[], selected=None),
+                    ui.input_selectize("subset_value", "Subset Value", choices=[], selected=None),
+                    ui.input_radio_buttons("subset_mode", "Subset Mode", {"single": "Single Value (filter to selected value)", "each": "Each Unique Value (new plot per value)"}),
                     ui.input_text("plot_title", "Plot title", value="ERT Plot"),
                     ui.input_numeric("plot_width", "Plot Width (inches)", value=8, min=4, max=20, step=0.5),
                     ui.input_numeric("plot_height", "Plot Height (inches)", value=6, min=4, max=20, step=0.5),
@@ -152,7 +156,7 @@ app_ui = ui.page_fluid(
             ui.h3("Plot Preview"),
             ui.output_ui("plot_preview"),
             ui.h3("Export"),
-            ui.input_text("export_dir", "Export Directory", value=""),
+            ui.input_text("plot_export_dir", "Export Directory", value=""),
             ui.p("Enter the full path to the directory where plots and data will be exported.", style="font-size: 12px; color: gray;"),
             ui.input_action_button("browse_dir", "Browse for Directory"),
             ui.input_checkbox("create_subdir", "Create new subdirectory", value=True),
@@ -236,6 +240,14 @@ def server(input, output, session):
                 "status_var", choices=[], selected=None,
                 server=False, session=session,
             )
+            ui.update_selectize(
+                "subset_var", choices=[], selected=None,
+                server=False, session=session,
+            )
+            ui.update_selectize(
+                "subset_value", choices=[], selected=None,
+                server=False, session=session,
+            )
             return
 
         columns = list(data.columns)
@@ -258,6 +270,44 @@ def server(input, output, session):
         )
         ui.update_selectize(
             "status_var", choices=columns, selected=status_default,
+            server=False, session=session,
+        )
+        # Also populate subset_var choices
+        ui.update_selectize(
+            "subset_var", choices=["None"] + columns, selected="None",
+            server=False, session=session,
+        )
+        ui.update_selectize(
+            "subset_value", choices=[], selected=None,
+            server=False, session=session,
+        )
+
+    @reactive.effect
+    @reactive.event(input.subset_var)
+    def _update_subset_value_choices():
+        """Update subset_value choices based on the selected subset_var.
+
+        Triggered when the subset variable selection changes, so that
+        the value dropdown is always in sync with the available data."""
+        data = _resolve_visualization_data()
+        if data is None or not hasattr(data, "columns"):
+            ui.update_selectize(
+                "subset_value", choices=[], selected=None,
+                server=False, session=session,
+            )
+            return
+
+        subset_var = input.subset_var()
+        if subset_var is None or subset_var == "None" or subset_var not in data.columns:
+            ui.update_selectize(
+                "subset_value", choices=[], selected=None,
+                server=False, session=session,
+            )
+            return
+
+        unique_vals = sorted(data[subset_var].dropna().unique().tolist())
+        ui.update_selectize(
+            "subset_value", choices=unique_vals, selected=None,
             server=False, session=session,
         )
 
@@ -400,7 +450,7 @@ def server(input, output, session):
             fishbase_export_status_state.set("No fishbase data available to export.")
             return
 
-        target_dir = input.export_dir()
+        target_dir = input.fishbase_export_dir()
         if not target_dir or not os.path.isdir(target_dir):
             fishbase_export_status_state.set("Please specify a valid export directory.")
             return
@@ -437,7 +487,7 @@ def server(input, output, session):
             fishbase_export_status_state.set("No fishbase data available to export.")
             return
 
-        target_dir = input.export_dir()
+        target_dir = input.fishbase_export_dir()
         if not target_dir or not os.path.isdir(target_dir):
             fishbase_export_status_state.set("Please specify a valid export directory.")
             return
@@ -467,10 +517,16 @@ def server(input, output, session):
 
         csv_path = _write_dataframe_to_csv(data)
         output_dir = tempfile.mkdtemp(prefix="ert_plots_")
+        # Normalize to forward slashes to prevent R from interpreting
+        # backslash escape sequences (e.g. \U in \Users) as Unicode escapes
+        output_dir = output_dir.replace("\\", "/")
         options = {
             "plot_type": input.plot_type(),
             "output_mode": input.output_mode(),
             "group_by": input.group_by(),
+            "subset_var": input.subset_var(),
+            "subset_value": input.subset_value(),
+            "subset_mode": input.subset_mode(),
             "mapping": {
                 "group_var": input.group_by(),
                 "time_var": input.time_var(),
@@ -483,7 +539,6 @@ def server(input, output, session):
             "width": input.plot_width(),
             "height": input.plot_height(),
             "dpi": input.plot_dpi(),
-            "output_file": None,
         }
 
         try:
@@ -520,11 +575,16 @@ def server(input, output, session):
 
         plot_files = manifest.get("plots", [])
         if not plot_files:
-            return ui.p("No plots to display.")
+            return ui.p("No plots to display. The R script may have failed to generate plots. Check the plot status and manifest above for details.")
 
         # Build image tags for each plot file using data URIs
         image_tags = []
         for plot_file in plot_files:
+            # Resolve relative paths against the output_directory from the manifest
+            if not os.path.isabs(plot_file):
+                output_dir = manifest.get("output_directory", "")
+                if output_dir:
+                    plot_file = os.path.join(output_dir, plot_file)
             if os.path.exists(plot_file):
                 filename = os.path.basename(plot_file)
                 try:
@@ -580,7 +640,7 @@ def server(input, output, session):
             export_status_state.set("No plots to export.")
             return
 
-        target_dir = input.export_dir()
+        target_dir = input.plot_export_dir()
         if not target_dir or not os.path.isdir(target_dir):
             export_status_state.set("Please specify a valid export directory.")
             return
