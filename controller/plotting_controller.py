@@ -3,7 +3,7 @@ import os
 import tempfile
 from pathlib import Path
 
-from controller.rscript_utils import run_r_script
+from controller.rscript_utils import normalize_path_for_r, normalize_value_for_r, run_r_script
 
 
 def run_plot(input_csv, options, manifest_path=None, r_script=None):
@@ -21,13 +21,22 @@ def run_plot(input_csv, options, manifest_path=None, r_script=None):
     try:
         temp_dir = tempfile.mkdtemp(prefix="ert_plotting_", dir=tempfile.gettempdir())
         options_path = os.path.join(temp_dir, "options.json")
+        normalized_options = normalize_value_for_r(options)
 
         with open(options_path, "w", encoding="utf-8") as handle:
-            json.dump(options, handle, indent=2)
+            json.dump(normalized_options, handle, indent=2)
+
+        # Normalize all paths to forward slashes to prevent R from
+        # interpreting backslash escape sequences (e.g. \U in \Users)
+        # as Unicode escapes when parsing command-line arguments.
+        r_script_str = normalize_path_for_r(r_script)
+        input_csv_str = normalize_path_for_r(input_csv)
+        options_path_str = normalize_path_for_r(options_path)
+        manifest_path_str = normalize_path_for_r(manifest_path)
 
         run_r_script(
-            [str(r_script), input_csv, options_path, manifest_path],
-            cwd=str(Path(r_script).resolve().parent.parent),
+            [r_script_str, input_csv_str, options_path_str, manifest_path_str],
+            cwd=normalize_path_for_r(Path(r_script).resolve().parent.parent),
         )
 
         with open(manifest_path, "r", encoding="utf-8") as handle:

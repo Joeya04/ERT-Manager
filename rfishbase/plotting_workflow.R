@@ -8,9 +8,12 @@ library(ggplot2)
 # Plotting Functions (inlined from plotting/basic_plots.R and plotting/plot_grouping.R)
 ############################################################
 
-create_kmplot <- function(fit, title, show_median = TRUE, include_risktable = TRUE, output_file = NULL, width = 8, height = 6, dpi = 300) {
+create_kmplot <- function(fit, title, show_median = TRUE, include_risktable = TRUE, output_file = NULL, output_directory = NULL, width = 8, height = 6, dpi = 300) {
 
     if (is.null(output_file)) {
+        if (is.null(output_directory)) {
+            output_directory <- tempdir()
+        }
         output_file <- file.path(output_directory, "kmplot.png")
     }
 
@@ -82,6 +85,24 @@ generate_median_dumbbell_plot <- function(
 
     medians <- summary(fit)$table
 
+    # When there is only one stratum, summary(fit)$table is a named
+    # numeric vector rather than a matrix.  Convert it to a 1-row matrix
+    # so that 2-D indexing (medians[, "median"]) works consistently.
+    # This happens in grouped output mode where each subset has a single
+    # group value, producing a single-stratum survfit object.
+    if (is.null(dim(medians))) {
+        if (!is.null(group_var) && group_var %in% names(data)) {
+            group_name <- paste0(group_var, "=", unique(data[[group_var]])[1])
+        } else {
+            group_name <- "All"
+        }
+        medians <- matrix(
+            medians,
+            nrow = 1,
+            dimnames = list(group_name, names(medians))
+        )
+    }
+
     median_df <- data.frame(
         group = rownames(medians),
         median_time = medians[, "median"],
@@ -89,6 +110,31 @@ generate_median_dumbbell_plot <- function(
     )
 
     median_df <- median_df[!is.na(median_df$median_time), ]
+
+    # Guard: if all medians are NA (survival never crossed 50 %),
+    # median_df will be empty.  Return a placeholder plot so the
+    # workflow does not crash downstream.
+    if (nrow(median_df) == 0) {
+        p <- ggplot() +
+            annotate(
+                "text", x = 0.5, y = 0.5,
+                label = "Median not reached\n(survival never dropped below 50%)",
+                size = 6, hjust = 0.5, vjust = 0.5
+            ) +
+            labs(
+                title = if (is.null(group_var) || group_var == ".dummy_group")
+                    "Median Residence Time"
+                else paste("Median Residence by", group_var)
+            ) +
+            theme_void()
+        if (!is.null(output_file)) {
+            if (!dir.exists(dirname(output_file))) {
+                dir.create(dirname(output_file), recursive = TRUE, showWarnings = FALSE)
+            }
+            ggsave(output_file, plot = p, width = width, height = height, dpi = dpi)
+        }
+        return(p)
+    }
 
     median_df$group <- factor(
         median_df$group,
@@ -186,6 +232,12 @@ build_kmplots <- function(dataframe, mapping, title, output_directory, output_fi
 
 build_median_dumbbell_plots <- function(dataframe, mapping, title, output_directory, output_file = NULL, show_median = TRUE, include_risktable = TRUE, width = 8, height = 6, dpi = 300) {
 
+    # NOTE: show_median and include_risktable are accepted for interface
+    # compatibility with build_kmplots (both are called via the same
+    # plot_function dispatch in create_single_plot / create_grouped_plots).
+    # Dumbbell plots do not use median reference lines or risk tables, so
+    # these parameters are intentionally ignored here.
+
     if (!dir.exists(output_directory)) {
         dir.create(output_directory, recursive = TRUE, showWarnings = FALSE)
     }
@@ -207,7 +259,7 @@ build_median_dumbbell_plots <- function(dataframe, mapping, title, output_direct
         group_var = group_var,
         time_var = time_var,
         status_var = status_var,
-        output_file = output_file,
+        output_file = NULL,
         width = width,
         height = height,
         dpi = dpi
@@ -215,6 +267,12 @@ build_median_dumbbell_plots <- function(dataframe, mapping, title, output_direct
 
     if (!is.null(title)) {
         p <- p + labs(title = title)
+    }
+
+    if (!is.null(output_file)) {
+        if (!dir.exists(dirname(output_file))) {
+            dir.create(dirname(output_file), recursive = TRUE, showWarnings = FALSE)
+        }
         ggsave(output_file, plot = p, width = width, height = height, dpi = dpi)
     }
 
@@ -249,6 +307,9 @@ generate_grouped_plots <- function(
             filter(.data[[group_by]] == group)
 
         safe_group <- gsub("[^A-Za-z0-9_-]", "_", as.character(group))
+        if (nchar(safe_group) == 0) {
+            safe_group <- "group"
+        }
 
         output_file <- file.path(
             output_directory,
@@ -353,7 +414,7 @@ group_by <- options$group_by
 if (is.list(group_by)) {
     group_by <- unlist(group_by)
 }
-has_grouping <- !is.null(group_by) && length(group_by) > 0 && all(group_by != "None" && group_by != "")
+has_grouping <- !is.null(group_by) && length(group_by) > 0 && all(group_by != "None" & group_by != "")
 
 # Helper: create a single plot (with strata if group_var is set)
 create_single_plot <- function(dataframe, group_vars, plot_function, mapping, title,
@@ -367,7 +428,11 @@ create_single_plot <- function(dataframe, group_vars, plot_function, mapping, ti
             gb_mapping <- mapping
             gb_mapping$group_var <- gb
             gb_title <- if (length(group_vars) == 1) full_title else paste(full_title, "-", gb)
-            gb_output_file <- file.path(output_directory, paste0(gsub("[^A-Za-z0-9_-]", "_", gb), ".png"))
+            safe_gb <- gsub("[^A-Za-z0-9_-]", "_", gb)
+            if (nchar(safe_gb) == 0) {
+                safe_gb <- "group"
+            }
+            gb_output_file <- file.path(output_directory, paste0(safe_gb, ".png"))
             p_file <- plot_function(
                 dataframe = dataframe,
                 mapping = gb_mapping,
@@ -560,7 +625,7 @@ manifest <- list(
     subset_value = if (!is.null(subset_value) && subset_value != "None") subset_value else NA,
     subset_mode = subset_mode,
     number_of_plots = length(plot_files),
-    plots = plot_files,
+    plots = I(as.list(plot_files)),
     output_directory = output_directory,
     settings = list(
         show_median = show_median,

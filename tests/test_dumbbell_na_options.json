@@ -1,0 +1,20 @@
+{
+  "plot_type": "dumbbell",
+  "output_mode": "grouped",
+  "group_by": ["Order"],
+  "subset_var": null,
+  "subset_value": "",
+  "subset_mode": "single",
+  "title": "ERT Plot - NA Medians Test",
+  "output_directory": "C:/Users/joeyg/OneDrive/Desktop/AZA/ERT_Plots/test_dumbbell_na",
+  "show_median": true,
+  "include_risktable": true,
+  "width": 8,
+  "height": 6,
+  "dpi": 300,
+  "mapping": {
+    "group_var": "Order",
+    "time_var": "yearfrac",
+    "status_var": "status"
+  }
+}

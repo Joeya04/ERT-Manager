@@ -34,48 +34,69 @@ app_ui = ui.page_fluid(
     ui.navset_tab(
         ui.nav_panel(
             "Enclosure Residence Time Calculator Overview",
-            ui.h2("Generating a Species Table"),
-            ui.p(
-                "Species residence tables are an important step toward determining the overall residency time for a given tank or enclosure."
-                " They are created by using census counts for the target tank/enclosure over the study duration with addition and mortality records to determine the total number of unique individuals and their approximate residence times in that enclosure"
+
+
+            ui.h3("Welcome to the Enclosure Residence Time Calculator! This webapp contains useful tools for calculating the enclosure residence time of individuals held in captivity." \
+            " Read the overview below to learn more about enclosure residency time and tools within the app. Explore the navigation panes above to learn move about each individual tool. Navigate back to this page or refresh your browser to return to the main menu."
             ),
-            ui.h3("How to Organize your data"),
+
+
+
+
+            ui.h3("NOTICE: This app is still under development. Some features may be missing or unavailable."),
+
+            ui.h2("Project Overview"),
+
+            #Banner heading for front page
+            #ui.img(src="/test.png", width="300px", height="300px"),
+
             ui.p(
                 "Enclosure residence time analysis requires data on study organisms to be structured so that each individual"
-                "creature is assigned an enclosure entrance date and exit date.  These dates may be exact or estimated based on"
-                "available records and associated data quality.  In the absence of comprehensive records and/or in the case of "
-                "group-managed organisms, adopting certain assumptions uniformly to generate estimated entrance and exit dates"
-                "is recommended."
+                " creature is assigned an enclosure entrance date and exit date.  These dates may be exact or estimated based on"
+                " available records and associated data quality.  In the absence of comprehensive records and/or in the case of "
+                " group-managed organisms, adopting certain assumptions uniformly to generate estimated entrance and exit dates"
+                " is recommended."
             ),
             ui.p(
                 "Organizational tools, such as the enclosure residence diagram below can help investigators reconstruct"
                 "actual and/or estimated enclosure entrance and exit dates at the individual organism level when population records"
                 "are spread across multiple repositories or complicated by inconsistent data management practices."
+                "Creating accurate enclosure residence tables begins with collecting historical records of additions, removals, and census counts for the target enclosure over the study duration."
             ),
-            ui.h4("Preparing Data for Upload and Analysis:"),
+
+
             ui.p(
                 "Once enclosure residence time for each organism is determined and entrance and exit dates are assigned to each individual, "
-                "the data should be organized as shown in the example below for uploading to the Enclosure Residence Time Calculator "
+                "the data should be organized into a chart that tracks the total or estimated residence time for each individual in an enclosure population. " \
+                "An example table can be found below. Additional instructions regarding the creation of residence charts can be found on the `Generating Species Residence Tables` tab along the navigation tab up top."
             ),
+
+            ui.img(src = "FIGURE2.jpg", height = 400, width = 750),
+
+
             ui.p(
-                "Once your input data is structured as outlined above, it can be uploaded via the side panel (starting with Step 1). "
-                "After uploading your data file, follow the subsequent steps to instruct the calculator which data column in your file represents "
-                "the residence time for each organism (Step 2), and the censorship status (Step 3). Once steps 1-3 are completed, a summary of the "
-                "uploaded data will appear below to verify the calculator in interpreting the file correctly. If everything appears correct, explore your data "
-                "using the tabs on the right. "
-            ),
+                "Data structured according to the instructions on the `Generating Species Residence Tables` tab can then be uploaded and translated into a dataframe containing the enclosure residence time for each individual in both years and days elapsed. "
+                "Additional information, such as census status and species name are also tracked. Completed dataframes are then ready for the addition/joining of grouping variables such as feeding behaviors, life history traits, or taxonomic grouping for interspecies comaprisons. "
+                ),
+
+            ui.img(src = "ERT_dataframe_example.jpg", height = 400, width = 750),
+
+                ui.p("Some of these grouping variables are available using Fishbase, a repository of thousands of studies that consolidates taxonomic and ecological information for thousands of finfishes" \
+                "More information regarding the use of fishbase data to derive grouping variables for analysis see the `Fishbase Lookup Tool` navigation pane above. "
+                "Once your grouping variables are structured and joined to your residence time dataframe, you can then visualize your data using the `Visualization` navigation pane above. " \
+                "Currently supported plot types include Kaplan-Meier Curves and Dumbell curves. "),
+
             ui.p(
                 "Disclaimer: We do not warrant that the service provided by the Enclosure Residence Time Calculator "
                 "will be uninterrupted, error-free, or secure. Your data when using this calculator is "
-                "stored and backed up on local and/or cloud storage. We have no liabiliity for any loss "
+                "stored and backed up on local and/or cloud storage. We have no liability for any loss "
                 "or misappropriation of your data under any circumstances."
             ),
         ),
 
         ui.nav_panel(
             "Generating Species Residence Tables",
-            ui.page_sidebar(
-                sidebar=ui.sidebar(
+                ui.h2("Residence "),
                     ui.p(
                         "Upload your ERT Workbook Table and Sheet Index Table  using the file upload buttons below. "
                         "The ERT Workbook Table should contain the data for your study organisms, while the Sheet Index Table should provide information about the structure of your workbook."
@@ -85,14 +106,15 @@ app_ui = ui.page_fluid(
                     ui.input_action_button("load_workbook", "Load Workbook"),
                     ui.output_text_verbatim("load_status"),
                     ui.output_text_verbatim("generated_status"),
-                )
-            ),
+
             ui.h2("Overview"),
             ui.p(
                 "The number of unique individuals in a given tank or enclosure is determined by using census counts for the target tank/enclosure over the study duration in tandem with addition and mortality records. "
                 " Creating residence charts can be first step toward visualizing complex datasets containing multiple record sources. Each table represents a single species, with each column representing a unique individual. "
                 " Formatted charts can be translated inside of this tool by following the formatting rules below. "
             ),
+
+
             ui.h2("Steps to Generate Species Residence Tables"),
             ui.p(
                 "Introduction dates are delineated with a green (hex code here?) cell with the corresponding date. "
@@ -100,6 +122,7 @@ app_ui = ui.page_fluid(
                 "Each row represents a timestep, such as years, and surivival of an individual to the next timestep is indicated by a green cell. "
             ),
         ),
+
         ui.nav_panel(
             "Fishbase Lookup Tool",
             ui.h2("Gathering Species Information from Fishbase"),
@@ -166,6 +189,9 @@ app_ui = ui.page_fluid(
         )
     )
 )
+
+
+
 
 
 def server(input, output, session):
@@ -508,11 +534,14 @@ def server(input, output, session):
             plot_manifest_state.set({"error": "No data available for plotting."})
             return
 
-        # Validate required columns for survival analysis
-        required_cols = ["yearfrac", "status"]
-        missing_cols = [c for c in required_cols if c not in data.columns]
-        if missing_cols:
-            plot_manifest_state.set({"error": f"Data is missing required columns: {missing_cols}. Please ensure your data has 'yearfrac' and 'status' columns."})
+        # Validate that the selected time_var and status_var columns exist in the data
+        time_var = input.time_var()
+        status_var = input.status_var()
+        if not time_var or time_var not in data.columns:
+            plot_manifest_state.set({"error": f"Time column '{time_var}' not found in data. Please select a valid time column."})
+            return
+        if not status_var or status_var not in data.columns:
+            plot_manifest_state.set({"error": f"Status column '{status_var}' not found in data. Please select a valid status column."})
             return
 
         csv_path = _write_dataframe_to_csv(data)
@@ -574,6 +603,10 @@ def server(input, output, session):
             return ui.p("No plots to display.")
 
         plot_files = manifest.get("plots", [])
+        # Ensure plot_files is always a list (handle case where JSON
+        # serialization may have produced a scalar string for single plots)
+        if isinstance(plot_files, str):
+            plot_files = [plot_files]
         if not plot_files:
             return ui.p("No plots to display. The R script may have failed to generate plots. Check the plot status and manifest above for details.")
 
@@ -678,4 +711,4 @@ def server(input, output, session):
         return ""
 
 
-app = App(app_ui, server)
+app = App(app_ui, server, static_assets=os.path.join(os.path.dirname(__file__), "www"))
