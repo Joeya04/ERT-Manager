@@ -1,5 +1,7 @@
 from datetime import datetime
+import os
 import re
+from pathlib import Path
 
 import pandas as pd
 from openpyxl import load_workbook
@@ -168,7 +170,7 @@ def parse_ert_workbook(workbook_path, sheet_index_path):
 
                 if (is_red or is_blue) and stop_date is None:
                     stop_date = date
-                    stop_status = "still alive" if is_blue else "completed"
+                    stop_status = "1" if is_blue else "0"
                     break
 
             if intro_date is not None and stop_date is not None:
@@ -186,9 +188,9 @@ def parse_ert_workbook(workbook_path, sheet_index_path):
                         "Exit_date": stop_date,
                         "duration_days": duration_days,
                         "yearfrac": yearfrac,
-                        "status": stop_status,
-                        "red_census": "Yes" if had_red_census else "No",
-                        "green_census": "Yes" if had_green_census else "No",
+                        "status": stop_status
+                        #"red_census": "Yes" if had_red_census else "No",
+                        #"green_census": "Yes" if had_green_census else "No",
                     }
                 )
 
@@ -199,9 +201,7 @@ def parse_ert_workbook(workbook_path, sheet_index_path):
         "Exit_date",
         "duration_days",
         "yearfrac",
-        "status",
-        "red_census",
-        "green_census",
+        "status"
     ]
 
     df = pd.DataFrame(records, columns=expected_columns)
@@ -224,6 +224,24 @@ def _get_uploaded_path(file_info):
     return getattr(file_info, "datapath", None)
 
 
+def save_results_to_excel(df, output_path):
+    """Save the parsed output DataFrame to an Excel workbook when a path is provided."""
+    if df is None:
+        return None
+
+    output_path_value = str(output_path or "").strip()
+    if not output_path_value:
+        return None
+
+    output_path_obj = Path(output_path_value)
+    if output_path_obj.suffix.lower() != ".xlsx":
+        output_path_obj = output_path_obj.with_suffix(".xlsx")
+
+    output_path_obj.parent.mkdir(parents=True, exist_ok=True)
+    df.to_excel(output_path_obj, index=False)
+    return str(output_path_obj)
+
+
 app_ui = ui.page_fluid(
     ui.h2("ERT Parser in Shiny for Python"),
     ui.p("Upload the main ERT workbook and the sheet-index workbook, then run the parser."),
@@ -237,18 +255,42 @@ app_ui = ui.page_fluid(
             ui.input_file("index_file", "Sheet index workbook", accept=[".xlsx"], multiple=False),
         ),
     ),
+    ui.input_text("output_path", "Save parsed workbook to (optional)", value=""),
+    ui.p("Enter a full file path such as C:/temp/parsed_output.xlsx. If left blank, the parsed output is only shown in the table.", style="font-size: 12px; color: gray;"),
     ui.input_action_button("run_parser", "Run parser", class_="btn-primary"),
+    ui.output_text_verbatim("save_status"),
     ui.output_table("results_table"),
 )
 
 
 def server(input, output, session):
+    save_status_msg = reactive.Value("")
+
     @reactive.event(input.run_parser)
     def parsed_df():
         workbook_path = _get_uploaded_path(input.workbook())
         index_path = _get_uploaded_path(input.index_file())
         req(workbook_path, index_path)
-        return parse_ert_workbook(workbook_path, index_path)
+
+        df = parse_ert_workbook(workbook_path, index_path)
+        save_path = input.output_path()
+        if save_path:
+            try:
+                saved_path = save_results_to_excel(df, save_path)
+                if saved_path:
+                    save_status_msg.set(f"Saved parsed workbook to {saved_path}")
+                else:
+                    save_status_msg.set("No save path provided; workbook was only displayed.")
+            except Exception as exc:
+                save_status_msg.set(f"Unable to save workbook: {exc}")
+        else:
+            save_status_msg.set("No save path provided; workbook was only displayed.")
+
+        return df
+
+    @render.text
+    def save_status():
+        return save_status_msg()
 
     @render.table
     def results_table():

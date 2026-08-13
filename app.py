@@ -36,7 +36,7 @@ app_ui = ui.page_fluid(
             "Enclosure Residence Time Calculator Overview",
 
 
-            ui.h3("Welcome to the Enclosure Residence Time Calculator! This webapp contains useful tools for calculating the enclosure residence time of individuals held in captivity." \
+            ui.h4("Welcome to the Enclosure Residence Time Calculator! This webapp contains useful tools for calculating the enclosure residence time of individuals held in captivity." \
             " Read the overview below to learn more about enclosure residency time and tools within the app. Explore the navigation panes above to learn move about each individual tool. Navigate back to this page or refresh your browser to return to the main menu."
             ),
 
@@ -59,16 +59,16 @@ app_ui = ui.page_fluid(
             ),
             ui.p(
                 "Organizational tools, such as the enclosure residence diagram below can help investigators reconstruct"
-                "actual and/or estimated enclosure entrance and exit dates at the individual organism level when population records"
-                "are spread across multiple repositories or complicated by inconsistent data management practices."
-                "Creating accurate enclosure residence tables begins with collecting historical records of additions, removals, and census counts for the target enclosure over the study duration."
+                " actual and/or estimated enclosure entrance and exit dates at the individual organism level when population records"
+                " are spread across multiple repositories or complicated by inconsistent data management practices."
+                " Creating accurate enclosure residence tables begins with collecting historical records of additions, removals, and census counts for the target enclosure over the study duration."
             ),
 
 
             ui.p(
                 "Once enclosure residence time for each organism is determined and entrance and exit dates are assigned to each individual, "
                 "the data should be organized into a chart that tracks the total or estimated residence time for each individual in an enclosure population. " \
-                "An example table can be found below. Additional instructions regarding the creation of residence charts can be found on the `Generating Species Residence Tables` tab along the navigation tab up top."
+                "An example table can be found below. Additional instructions regarding the creation of residence charts can be found on the `Generating Species Residence Tables` tab along the navigation tab above."
             ),
 
             ui.img(src = "FIGURE2.jpg", height = 400, width = 750),
@@ -81,10 +81,10 @@ app_ui = ui.page_fluid(
 
             ui.img(src = "ERT_dataframe_example.jpg", height = 400, width = 750),
 
-                ui.p("Some of these grouping variables are available using Fishbase, a repository of thousands of studies that consolidates taxonomic and ecological information for thousands of finfishes" \
-                "More information regarding the use of fishbase data to derive grouping variables for analysis see the `Fishbase Lookup Tool` navigation pane above. "
-                "Once your grouping variables are structured and joined to your residence time dataframe, you can then visualize your data using the `Visualization` navigation pane above. " \
-                "Currently supported plot types include Kaplan-Meier Curves and Dumbell curves. "),
+                ui.p("Some of these grouping variables are available using Fishbase, a repository of thousands of studies that consolidates taxonomic and ecological information for thousands of finfishes." \
+                " More information regarding the use of fishbase data to derive grouping variables for analysis see the `Fishbase Lookup Tool` navigation pane above. "
+                " Once your grouping variables are structured and joined to your residence time dataframe, you can then visualize your data using the `Visualization` navigation pane above. " \
+                " Currently supported plot types include Kaplan-Meier Curves and Dumbell curves. "),
 
             ui.p(
                 "Disclaimer: We do not warrant that the service provided by the Enclosure Residence Time Calculator "
@@ -96,16 +96,31 @@ app_ui = ui.page_fluid(
 
         ui.nav_panel(
             "Generating Species Residence Tables",
-                ui.h2("Residence "),
+                ui.h2("Enclosure Residency Time Date Parser"),
                     ui.p(
                         "Upload your ERT Workbook Table and Sheet Index Table  using the file upload buttons below. "
                         "The ERT Workbook Table should contain the data for your study organisms, while the Sheet Index Table should provide information about the structure of your workbook."
+                        "To learn more about how to create your own tables, please see the instructions below."
                     ),
                     ui.input_file("ert_input", "Upload ERT Workbook Table", accept=[".csv", ".xlsx", ".xls"], multiple=False),
                     ui.input_file("index_input", "Upload Sheet Index Table", accept=[".csv", ".xlsx", ".xls"], multiple=False),
                     ui.input_action_button("load_workbook", "Load Workbook"),
+ui.input_checkbox("show_input_previews", "Show uploaded file previews", value=False),
                     ui.output_text_verbatim("load_status"),
                     ui.output_text_verbatim("generated_status"),
+                    ui.output_ui("input_preview_panel"),
+                    ui.h3("Loaded Workbook Preview"),
+                    ui.p(
+                        "Review the parsed output table below to verify the workbook translation before moving on to downstream analysis.",
+                        style="font-size: 12px; color: gray;",
+                    ),
+                    ui.output_data_frame("parsed_output_preview"),
+                    ui.h4("Export Parsed Workbook"),
+                    ui.input_text("workbook_export_dir", "Export directory", value=""),
+                    ui.p("Enter the full path to the directory where the final Excel workbook will be exported.", style="font-size: 12px; color: gray;"),
+                    ui.input_text("workbook_export_name", "Output file name", value="parsed_workbook.xlsx"),
+                    ui.input_action_button("export_workbook", "Export Workbook as Excel"),
+                    ui.output_text_verbatim("workbook_export_status"),
 
             ui.h2("Overview"),
             ui.p(
@@ -214,6 +229,27 @@ def server(input, output, session):
                 handle.write(str(df))
         return csv_path
 
+    def _get_excel_sheet_names(path):
+        if path.lower().endswith((".xlsx", ".xls")):
+            excel_file = pd.ExcelFile(path)
+            try:
+                return excel_file.sheet_names
+            finally:
+                excel_file.close()
+        return []
+
+    def _preview_uploaded_file(path, sheet_name=None):
+        if path.lower().endswith(".csv"):
+            return pd.read_csv(path)
+        if path.lower().endswith((".xlsx", ".xls")):
+            excel_file = pd.ExcelFile(path)
+            try:
+                selected_sheet = sheet_name or excel_file.sheet_names[0]
+                return pd.read_excel(path, sheet_name=selected_sheet)
+            finally:
+                excel_file.close()
+        raise ValueError("Unsupported file format. Please upload a CSV or Excel file.")
+
     def _resolve_fishbase_data():
         source_name = input.fishbase_data_source()
         if source_name == "None":
@@ -277,6 +313,29 @@ def server(input, output, session):
             return
 
         columns = list(data.columns)
+
+        if not columns:
+            ui.update_selectize(
+                "group_by", choices=[], selected=None,
+                server=False, session=session,
+            )
+            ui.update_selectize(
+                "time_var", choices=[], selected=None,
+                server=False, session=session,
+            )
+            ui.update_selectize(
+                "status_var", choices=[], selected=None,
+                server=False, session=session,
+            )
+            ui.update_selectize(
+                "subset_var", choices=[], selected=None,
+                server=False, session=session,
+            )
+            ui.update_selectize(
+                "subset_value", choices=[], selected=None,
+                server=False, session=session,
+            )
+            return
 
         # Pick sensible defaults for time_var and status_var
         time_default = "yearfrac" if "yearfrac" in columns else (
@@ -424,6 +483,164 @@ def server(input, output, session):
         if hasattr(data, "shape"):
             return f"Generated {data.shape[0]} row(s) x {data.shape[1]} column(s)."
         return ""
+
+    @reactive.effect
+    @reactive.event(input.ert_input)
+    def _update_ert_sheet_choices():
+        uploaded_files = input.ert_input()
+        if not uploaded_files:
+            ui.update_select("ert_sheet", choices=[], selected=None, session=session)
+            return
+
+        path = uploaded_files[0]["datapath"]
+        if path.lower().endswith((".xlsx", ".xls")):
+            sheet_names = _get_excel_sheet_names(path)
+            selected_sheet = sheet_names[0] if sheet_names else None
+            ui.update_select("ert_sheet", choices=sheet_names, selected=selected_sheet, session=session)
+        else:
+            ui.update_select("ert_sheet", choices=["CSV preview"], selected="CSV preview", session=session)
+
+    @reactive.effect
+    @reactive.event(input.index_input)
+    def _update_index_sheet_choices():
+        uploaded_files = input.index_input()
+        if not uploaded_files:
+            ui.update_select("index_sheet", choices=[], selected=None, session=session)
+            return
+
+        path = uploaded_files[0]["datapath"]
+        if path.lower().endswith((".xlsx", ".xls")):
+            sheet_names = _get_excel_sheet_names(path)
+            selected_sheet = sheet_names[0] if sheet_names else None
+            ui.update_select("index_sheet", choices=sheet_names, selected=selected_sheet, session=session)
+        else:
+            ui.update_select("index_sheet", choices=["CSV preview"], selected="CSV preview", session=session)
+
+    @output
+    @render.ui
+    def input_preview_panel():
+        if not input.show_input_previews():
+            return ui.div()
+
+        uploaded_ert = input.ert_input()
+        uploaded_index = input.index_input()
+
+        if not uploaded_ert and not uploaded_index:
+            return ui.div(
+                ui.p("Upload the workbook files above to preview their contents.", style="font-size: 12px; color: gray;"),
+                style="margin-top: 1rem;",
+            )
+
+        children = [ui.h4("Uploaded file previews")]
+        if uploaded_ert:
+            ert_path = uploaded_ert[0]["datapath"]
+            if ert_path.lower().endswith((".xlsx", ".xls")):
+                sheet_names = _get_excel_sheet_names(ert_path)
+                if sheet_names:
+                    children.extend([
+                        ui.p("Use the sheet selector to browse each worksheet in the workbook.", style="font-size: 12px; color: gray;"),
+                        ui.input_select("ert_sheet", "Select ERT workbook sheet", choices=sheet_names, selected=input.ert_sheet() or sheet_names[0]),
+                    ])
+            children.extend([
+                ui.h5("ERT workbook preview"),
+                ui.div(
+                    ui.output_data_frame("ert_input_preview"),
+                    style="overflow: auto; max-height: 500px; padding: 0.5rem; border: 1px solid #ddd;",
+                ),
+            ])
+        if uploaded_index:
+            index_path = uploaded_index[0]["datapath"]
+            if index_path.lower().endswith((".xlsx", ".xls")):
+                sheet_names = _get_excel_sheet_names(index_path)
+                if sheet_names:
+                    children.extend([
+                        ui.input_select("index_sheet", "Select sheet index sheet", choices=sheet_names, selected=input.index_sheet() or sheet_names[0]),
+                    ])
+            children.extend([
+                ui.h5("Sheet index preview"),
+                ui.div(
+                    ui.output_data_frame("index_input_preview"),
+                    style="overflow: auto; max-height: 500px; padding: 0.5rem; border: 1px solid #ddd;",
+                ),
+            ])
+
+        return ui.div(*children, style="margin-top: 1rem;")
+
+    @output
+    @render.data_frame
+    def parsed_output_preview():
+        data = residence_chart_data()
+        if data is None:
+            return pd.DataFrame({"Status": ["Workbook not loaded yet."]})
+
+        preview_df = data.copy()
+        if hasattr(preview_df, "head"):
+            preview_df = preview_df.head(50)
+        return preview_df
+
+    @reactive.effect
+    @reactive.event(input.export_workbook)
+    def _export_workbook():
+        data = residence_chart_data()
+        if data is None:
+            generated_status_state.set("No parsed workbook available to export.")
+            return
+
+        target_dir = input.workbook_export_dir()
+        file_name = input.workbook_export_name()
+
+        if not target_dir:
+            generated_status_state.set("Please specify an export directory before exporting the workbook.")
+            return
+
+        if not os.path.isdir(target_dir):
+            try:
+                os.makedirs(target_dir, exist_ok=True)
+            except Exception as exc:
+                generated_status_state.set(f"Could not create export directory: {exc}")
+                return
+
+        if not file_name.lower().endswith(".xlsx"):
+            file_name = f"{file_name}.xlsx"
+
+        output_path = os.path.join(target_dir, file_name)
+
+        try:
+            data.to_excel(output_path, index=False)
+            generated_status_state.set(f"Workbook exported successfully to {output_path}.")
+        except Exception as exc:
+            generated_status_state.set(f"Workbook export failed: {exc}")
+
+    @output
+    @render.text
+    def workbook_export_status():
+        return generated_status_state() if generated_status_state() is not None else ""
+
+    @output
+    @render.data_frame
+    def ert_input_preview():
+        uploaded_files = input.ert_input()
+        if not uploaded_files:
+            return pd.DataFrame({"Status": ["No ERT workbook uploaded."]})
+
+        try:
+            sheet_name = input.ert_sheet() if input.ert_sheet() not in (None, "CSV preview") else None
+            return _preview_uploaded_file(uploaded_files[0]["datapath"], sheet_name=sheet_name)
+        except Exception as exc:
+            return pd.DataFrame({"Preview error": [str(exc)]})
+
+    @output
+    @render.data_frame
+    def index_input_preview():
+        uploaded_files = input.index_input()
+        if not uploaded_files:
+            return pd.DataFrame({"Status": ["No sheet index uploaded."]})
+
+        try:
+            sheet_name = input.index_sheet() if input.index_sheet() not in (None, "CSV preview") else None
+            return _preview_uploaded_file(uploaded_files[0]["datapath"], sheet_name=sheet_name)
+        except Exception as exc:
+            return pd.DataFrame({"Preview error": [str(exc)]})
 
     @reactive.effect
     @reactive.event(input.run_species)
